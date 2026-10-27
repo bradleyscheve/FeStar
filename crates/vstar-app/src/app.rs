@@ -132,6 +132,12 @@ fn default_ranges(now_jd: f64) -> [String; 4] {
     ]
 }
 
+/// The selected star tab: dark blue with light grey text.
+const STAR_TAB_FILL: egui::Color32 = egui::Color32::from_rgb(0x0B, 0x39, 0x7A);
+const STAR_TAB_TEXT: egui::Color32 = egui::Color32::from_gray(0xD3);
+/// The selected view tab (light curve, phase plot, ...): bright blue, black text.
+const VIEW_TAB_FILL: egui::Color32 = egui::Color32::from_rgb(0x40, 0x8A, 0xF5);
+
 /// Everything that belongs to one loaded star. The star being shown lives in
 /// `VStarApp`'s own fields; the others are parked here, so switching stars
 /// needs no reloading.
@@ -423,7 +429,7 @@ impl VStarApp {
                         let label = self.star_tab_label(i);
                         let visuals = ui.visuals();
                         let fill = if selected {
-                            visuals.widgets.active.weak_bg_fill
+                            STAR_TAB_FILL
                         } else {
                             visuals.widgets.inactive.weak_bg_fill
                         };
@@ -434,7 +440,11 @@ impl VStarApp {
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     let text = RichText::new(label).strong();
-                                    let text = if selected { text } else { text.weak() };
+                                    let text = if selected {
+                                        text.color(STAR_TAB_TEXT)
+                                    } else {
+                                        text.weak()
+                                    };
                                     let name =
                                         ui.add(egui::Label::new(text).sense(egui::Sense::click()));
                                     if name.clicked() && !selected {
@@ -442,9 +452,13 @@ impl VStarApp {
                                     }
                                     if ui
                                         .add(
-                                            egui::Button::new(RichText::new("×").weak())
-                                                .frame(false)
-                                                .small(),
+                                            egui::Button::new(if selected {
+                                                RichText::new("×").color(STAR_TAB_TEXT)
+                                            } else {
+                                                RichText::new("×").weak()
+                                            })
+                                            .frame(false)
+                                            .small(),
                                         )
                                         .on_hover_text("Close this star")
                                         .clicked()
@@ -938,6 +952,8 @@ impl VStarApp {
 
     fn tab_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            ui.visuals_mut().selection.bg_fill = VIEW_TAB_FILL;
+            ui.visuals_mut().selection.stroke.color = egui::Color32::BLACK;
             ui.selectable_value(&mut self.tab, Tab::LightCurve, "Light curve");
             if self.phase.active.is_some() {
                 ui.selectable_value(&mut self.tab, Tab::PhasePlot, "Phase plot");
