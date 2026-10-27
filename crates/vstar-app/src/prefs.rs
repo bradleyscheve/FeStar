@@ -7,6 +7,7 @@ use vstar_core::ai::{AiClient, AiConfig, Provider, load_key};
 use vstar_core::http::ReqwestClient;
 use vstar_core::secrets::{KeyringStore, MemoryStore, SecretStore};
 
+use crate::external::ExternalApps;
 use crate::task::Task;
 use crate::theme;
 
@@ -88,7 +89,13 @@ pub struct PrefsState {
 }
 
 impl PrefsState {
-    pub fn show(&mut self, ctx: &egui::Context, config: &mut AiConfig, secrets: &Secrets) {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        config: &mut AiConfig,
+        apps: &mut ExternalApps,
+        secrets: &Secrets,
+    ) {
         if !self.open {
             return;
         }
@@ -102,7 +109,12 @@ impl PrefsState {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .min_width(460.0)
-            .show(ctx, |ui| self.contents(ui, config, secrets));
+            .show(ctx, |ui| {
+                self.contents(ui, config, secrets);
+                ui.add_space(10.0);
+                ui.separator();
+                external_contents(ui, apps);
+            });
         self.open = open;
     }
 
@@ -333,4 +345,71 @@ impl PrefsState {
             );
         });
     }
+}
+
+/// Where Stellarium and N.I.N.A. are, for the buttons on the star card.
+fn external_contents(ui: &mut egui::Ui, apps: &mut ExternalApps) {
+    ui.label(RichText::new("Stellarium and N.I.N.A.").strong().size(16.0));
+    ui.label(
+        "The star card's Stellarium and NINA buttons send the star's position to these programs. \
+         Setting the location lets FeStar start a program that isn't running yet.",
+    );
+    ui.add_space(6.0);
+    let row = |ui: &mut egui::Ui,
+               id: &str,
+               label: &str,
+               path: &mut String,
+               port: &mut u16,
+               hint: &str| {
+        ui.label(label);
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(path)
+                        .hint_text(hint)
+                        .desired_width(240.0),
+                );
+                if ui.button("Browse…").clicked()
+                    && let Some(file) = rfd::FileDialog::new().pick_file()
+                {
+                    *path = file.display().to_string();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Port").weak());
+                ui.add(egui::DragValue::new(port).range(1..=65535).speed(1));
+            });
+        });
+        ui.end_row();
+        let _ = id;
+    };
+    egui::Grid::new("external_apps")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            row(
+                ui,
+                "stellarium",
+                "Stellarium",
+                &mut apps.stellarium_path,
+                &mut apps.stellarium_port,
+                "C:\\Program Files\\Stellarium\\stellarium.exe",
+            );
+            row(
+                ui,
+                "nina",
+                "N.I.N.A.",
+                &mut apps.nina_path,
+                &mut apps.nina_port,
+                "C:\\Program Files\\N.I.N.A. - Nighttime Imaging 'N' Astronomy\\NINA.exe",
+            );
+        });
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new(
+            "Stellarium needs its Remote Control plugin switched on (default port 8090). \
+             N.I.N.A. needs the Advanced API plugin with its server started (default port 1888).",
+        )
+        .weak(),
+    );
 }

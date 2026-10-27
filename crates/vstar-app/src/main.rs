@@ -3,6 +3,7 @@
 
 mod app;
 mod app_icon;
+mod external;
 mod light_curve;
 mod loader;
 mod phase_ui;

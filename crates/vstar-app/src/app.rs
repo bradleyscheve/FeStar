@@ -7,10 +7,12 @@ use vstar_core::analysis::TimeSeries;
 use vstar_core::sources::aavso;
 use vstar_core::{Dataset, Observation, StarQuery, Validation, bands, time};
 
+use crate::external::{self, ExternalApps, Program};
 use crate::loader::{Job, Request};
 use crate::phase_ui::PhaseState;
 use crate::prefs::{PrefsState, Secrets};
 use crate::search_ui::{SearchMode, SearchState};
+use crate::task::Task;
 use crate::tools_ui::{Tool, ToolsState};
 use crate::vsp_ui::VspState;
 use crate::{light_curve, theme};
@@ -80,6 +82,7 @@ struct Settings {
     show_discrepant: bool,
     show_fainter_than: bool,
     theme: ThemeChoice,
+    external: ExternalApps,
     recent_stars: Vec<String>,
     /// Bands the user has left checked; applied to every star loaded.
     shown_bands: Vec<String>,
@@ -101,6 +104,7 @@ impl Default for Settings {
             show_discrepant: false,
             show_fainter_than: true,
             theme: ThemeChoice::System,
+            external: ExternalApps::default(),
             recent_stars: Vec::new(),
             shown_bands: vec!["V".into()],
         }
@@ -155,6 +159,7 @@ pub struct VStarApp {
     pub(crate) search: SearchState,
     pub(crate) prefs: PrefsState,
     vsp: VspState,
+    external_task: Option<Task<String>>,
     pub(crate) tools: ToolsState,
     secrets: Secrets,
 }
@@ -195,6 +200,7 @@ impl VStarApp {
             search: SearchState::default(),
             prefs: PrefsState::default(),
             vsp: VspState::default(),
+            external_task: None,
             tools: ToolsState::default(),
             secrets: Secrets::new(),
         }
@@ -432,6 +438,17 @@ impl VStarApp {
         } else if let Some(i) = switch_to {
             self.activate(i);
         }
+    }
+
+    fn poll_external(&mut self) {
+        let Some(result) = self.external_task.as_ref().and_then(Task::poll) else {
+            return;
+        };
+        self.external_task = None;
+        self.status = match result {
+            Ok(msg) => Status::Info(msg),
+            Err(e) => Status::Error(e.to_string()),
+        };
     }
 
     fn finish_load(&mut self) {
@@ -743,6 +760,40 @@ impl VStarApp {
                     self.vsp.open(ui.ctx(), &ds.star.name);
                 }
             });
+            if let (Some(ra), Some(dec)) = (ds.star.ra_deg, ds.star.dec_deg) {
+                for (program, icon, label, tip) in [
+                    (
+                        Program::Stellarium,
+                        theme::Icon::Moon,
+                        "Stellarium",
+                        "Centre Stellarium on this star (needs its Remote Control plugin)",
+                    ),
+                    (
+                        Program::Nina,
+                        theme::Icon::Telescope,
+                        "NINA",
+                        "Open this star in N.I.N.A.'s framing tool (needs the Advanced API plugin)",
+                    ),
+                ] {
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, icon);
+                        let busy = self.external_task.is_some();
+                        if ui
+                            .add_enabled(!busy, egui::Button::new(label))
+                            .on_hover_text(tip)
+                            .clicked()
+                        {
+                            self.external_task = Some(external::open(
+                                ui.ctx(),
+                                program,
+                                &self.settings.external,
+                                ra,
+                                dec,
+                            ));
+                        }
+                    });
+                }
+            }
             if !ds.star.name.trim().is_empty() {
                 ui.horizontal(|ui| {
                     theme::icon(ui, theme::Icon::Book);
@@ -923,6 +974,7 @@ impl eframe::App for VStarApp {
         self.finish_load();
         self.poll_search();
         self.poll_phase_ai();
+        self.poll_external();
         let ctx = ui.ctx().clone();
         self.poll_tools(&ctx);
         self.vsp.show(&ctx);
@@ -930,7 +982,12 @@ impl eframe::App for VStarApp {
         self.show_history_dialogs(&ctx);
         self.show_phase_dialog(&ctx);
         self.show_search_dialog(&ctx);
-        self.prefs.show(&ctx, &mut self.settings.ai, &self.secrets);
+        self.prefs.show(
+            &ctx,
+            &mut self.settings.ai,
+            &mut self.settings.external,
+            &self.secrets,
+        );
 
         egui::Panel::top("menu").show(ui, |ui| self.top_bar(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));

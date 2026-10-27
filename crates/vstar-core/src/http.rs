@@ -32,6 +32,14 @@ pub trait HttpClient: Send + Sync {
             "this HTTP client can't send POST requests".into(),
         ))
     }
+
+    /// POST `application/x-www-form-urlencoded` fields and return the
+    /// response body (used for programs on this computer, such as Stellarium).
+    fn post_form(&self, _url: &str, _fields: &[(&str, &str)]) -> Result<String> {
+        Err(Error::Network(
+            "this HTTP client can't send POST requests".into(),
+        ))
+    }
 }
 
 /// The real client, backed by `reqwest`. It uses the operating system's TLS
@@ -111,6 +119,24 @@ impl HttpClient for ReqwestClient {
             req = req.header(*name, *value);
         }
         let resp = req.send().map_err(|e| Error::Network(e.to_string()))?;
+        let status = resp.status();
+        let text = resp.text().map_err(|e| Error::Network(e.to_string()))?;
+        if !status.is_success() {
+            let detail: String = text.chars().take(400).collect();
+            return Err(Error::Network(format!(
+                "the server answered {status}: {detail}"
+            )));
+        }
+        Ok(text)
+    }
+
+    fn post_form(&self, url: &str, fields: &[(&str, &str)]) -> Result<String> {
+        let resp = self
+            .inner
+            .post(url)
+            .form(fields)
+            .send()
+            .map_err(|e| Error::Network(e.to_string()))?;
         let status = resp.status();
         let text = resp.text().map_err(|e| Error::Network(e.to_string()))?;
         if !status.is_success() {

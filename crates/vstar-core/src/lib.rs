@@ -12,6 +12,7 @@ pub mod bands;
 pub mod error;
 pub mod http;
 pub mod model;
+pub mod planetarium;
 pub mod secrets;
 pub mod sources;
 pub mod time;

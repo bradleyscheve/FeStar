@@ -84,6 +84,8 @@ pub fn band_color(ui: &egui::Ui, band: &str) -> Color32 {
 pub enum Icon {
     StarChart,
     Book,
+    Moon,
+    Telescope,
 }
 
 pub fn icon(ui: &mut egui::Ui, icon: Icon) {
@@ -108,6 +110,34 @@ pub fn icon(ui: &mut egui::Ui, icon: Icon) {
                 [c + Vec2::new(-1.0, -1.0), c + Vec2::new(2.5, 2.0)],
                 Stroke::new(0.8, color),
             );
+        }
+        Icon::Moon => {
+            // A crescent: a disc with a second disc cut out of it.
+            painter.circle_filled(c, 6.5, color);
+            painter.circle_filled(c + Vec2::new(3.0, -2.0), 5.5, ui.visuals().window_fill);
+            painter.circle_filled(c + Vec2::new(4.5, 4.0), 1.0, color);
+        }
+        Icon::Telescope => {
+            // A tube on a tripod.
+            let tube = [
+                egui::pos2(c.x - 7.0, c.y - 1.0),
+                egui::pos2(c.x - 5.5, c.y - 4.5),
+                egui::pos2(c.x + 6.0, c.y - 0.5),
+                egui::pos2(c.x + 5.0, c.y + 2.5),
+            ];
+            painter.add(egui::Shape::convex_polygon(
+                tube.to_vec(),
+                color.gamma_multiply(0.35),
+                stroke,
+            ));
+            let top = egui::pos2(c.x - 1.0, c.y + 1.5);
+            for foot in [
+                egui::pos2(c.x - 5.0, c.y + 7.5),
+                egui::pos2(c.x + 3.5, c.y + 7.5),
+                egui::pos2(c.x - 0.5, c.y + 7.5),
+            ] {
+                painter.line_segment([top, foot], Stroke::new(1.0, color));
+            }
         }
         Icon::Book => {
             let (l, r, t, b) = (c.x - 7.0, c.x + 7.0, c.y - 5.5, c.y + 5.5);
@@ -147,7 +177,7 @@ pub fn star_icon(
 ) -> egui::Response {
     use vstar_core::vartypes::StarLook;
     let size = if look == StarLook::Nova {
-        Vec2::new(30.0, 30.0)
+        Vec2::new(68.0, 30.0)
     } else {
         Vec2::new(40.0, 22.0)
     };
@@ -192,64 +222,61 @@ pub fn star_icon(
             star(c + Vec2::new(-5.0, 0.0), 6.5, base);
         }
         StarLook::Nova => {
-            // A hot, glowing blue star with a faint stream of gas passing
-            // behind it, as in artists' pictures of novae.
-            let blue = Color32::from_rgb(45, 200, 245);
-            let glow = Color32::from_rgb(110, 215, 255);
-            let dir = Vec2::new(0.32, 1.0).normalized();
-            let side = Vec2::new(dir.y, -dir.x);
-            let along = |t: f32, half_width: f32, alpha: u8| {
-                let col = Color32::from_rgba_unmultiplied(150, 210, 240, alpha);
-                [
-                    (c + dir * t - side * half_width, col),
-                    (c + dir * t + side * half_width, col),
-                ]
-            };
+            // Like the usual artist's picture: a red donor star on the left,
+            // a stream of gas that narrows toward a flat, glowing disc around
+            // the white dwarf at the lower right.
+            let donor_c = egui::pos2(rect.left() + 11.5, c.y - 3.5);
+            let disc_c = egui::pos2(rect.right() - 17.0, c.y + 6.5);
+            let donor_col = Color32::from_rgb(235, 80, 30);
+            let stream_hot = Color32::from_rgb(255, 215, 90);
+            let stream_cool = Color32::from_rgb(160, 185, 255);
+            // The stream: a tapered strip fading from yellow to blue.
             let mut mesh = egui::Mesh::default();
-            for (t, w, alpha) in [
-                (-14.0, 2.5, 0),
-                (-6.0, 4.5, 120),
-                (6.0, 4.5, 120),
-                (14.0, 6.0, 0),
-            ] {
-                for (pos, col) in along(t, w, alpha) {
-                    mesh.colored_vertex(pos, col);
-                }
+            let ends = [
+                (donor_c + Vec2::new(3.0, -10.0), stream_hot),
+                (donor_c + Vec2::new(3.0, 10.0), stream_hot),
+                (disc_c + Vec2::new(-6.0, -7.5), stream_cool),
+                (disc_c + Vec2::new(-2.0, -2.0), stream_cool),
+            ];
+            for (pos, color) in ends {
+                mesh.colored_vertex(pos, color);
             }
-            for i in 0..3u32 {
-                let k = i * 2;
-                mesh.add_triangle(k, k + 1, k + 2);
-                mesh.add_triangle(k + 1, k + 3, k + 2);
-            }
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(1, 3, 2);
             painter.add(egui::Shape::mesh(mesh));
-            // Halo, then the star's textured surface.
-            for (r, alpha) in [(12.0, 28), (10.5, 45), (9.5, 70)] {
-                painter.circle_filled(
-                    c,
-                    r,
-                    Color32::from_rgba_unmultiplied(glow.r(), glow.g(), glow.b(), alpha),
-                );
-            }
-            painter.circle_filled(c, 8.0, blue);
-            for (dx, dy, bright) in [
-                (-3.0, -3.5, true),
-                (1.5, -4.5, false),
-                (3.5, -1.0, true),
-                (-4.5, 0.5, false),
-                (-1.0, 1.0, true),
-                (2.0, 3.0, false),
-                (-3.0, 4.0, true),
-                (4.5, 3.5, true),
-                (0.5, -1.5, false),
-            ] {
-                let (col, r) = if bright {
-                    (Color32::from_rgba_unmultiplied(230, 250, 255, 200), 1.1)
-                } else {
-                    (Color32::from_rgba_unmultiplied(20, 110, 190, 170), 1.3)
-                };
-                painter.circle_filled(c + Vec2::new(dx, dy), r, col);
-            }
-            painter.circle_stroke(c, 8.0, Stroke::new(1.0, glow));
+            // The disc: a flattened ring, bluish white, brighter in the middle.
+            let ellipse = |rx: f32, ry: f32| -> Vec<egui::Pos2> {
+                (0..32)
+                    .map(|i| {
+                        let a = i as f32 / 32.0 * std::f32::consts::TAU;
+                        disc_c + Vec2::new(a.cos() * rx, a.sin() * ry)
+                    })
+                    .collect()
+            };
+            painter.add(egui::Shape::convex_polygon(
+                ellipse(16.0, 7.5),
+                Color32::from_rgb(110, 145, 205),
+                Stroke::new(0.8, rim.gamma_multiply(0.7)),
+            ));
+            painter.add(egui::Shape::convex_polygon(
+                ellipse(11.0, 5.2),
+                Color32::from_rgb(170, 200, 240),
+                Stroke::NONE,
+            ));
+            painter.add(egui::Shape::convex_polygon(
+                ellipse(5.5, 2.6),
+                Color32::from_rgb(225, 240, 255),
+                Stroke::NONE,
+            ));
+            // The white dwarf itself, small, hot and blue-white.
+            painter.circle_filled(disc_c, 2.6, Color32::from_rgb(245, 250, 255));
+            painter.circle_stroke(
+                disc_c,
+                3.4,
+                Stroke::new(1.0, Color32::from_rgba_unmultiplied(150, 200, 255, 150)),
+            );
+            // The donor star, over the start of the stream.
+            star(donor_c, 10.5, donor_col);
         }
     }
     response
