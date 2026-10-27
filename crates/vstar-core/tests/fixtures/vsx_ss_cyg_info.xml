@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-made fixture in the shape VStar's VSX parser expects; values are illustrative. -->
+<VSXObjects>
+  <VSXObject>
+    <Name>SS Cyg</Name>
+    <AUID>000-BCP-220</AUID>
+    <RA2000>325.67858</RA2000>
+    <Declination2000>43.58611</Declination2000>
+    <VariabilityType>UGSS+E</VariabilityType>
+    <Period>0.27512973</Period>
+    <Epoch></Epoch>
+    <SpectralType>K5V+pec(UG)</SpectralType>
+    <Discoverer>Louisa D. Wells (1896)</Discoverer>
+  </VSXObject>
+  <Count>3</Count>
+</VSXObjects>
