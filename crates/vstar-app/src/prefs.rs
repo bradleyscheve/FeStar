@@ -136,10 +136,10 @@ impl PrefsState {
                 }
                 ui.end_row();
 
-                if config.provider == Provider::Custom {
+                if config.provider.has_editable_address() {
                     ui.label("Address");
                     ui.add(
-                        egui::TextEdit::singleline(&mut config.custom_base_url)
+                        egui::TextEdit::singleline(config.address_mut())
                             .hint_text("http://localhost:11434/v1")
                             .desired_width(280.0),
                     );

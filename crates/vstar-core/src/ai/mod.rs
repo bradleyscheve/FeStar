@@ -27,15 +27,27 @@ pub enum Provider {
     /// Any service that speaks the OpenAI chat API, such as OpenRouter or a
     /// model running on your own computer.
     Custom,
+    /// A model running on your own computer through Ollama.
+    Ollama,
+    /// Nous Research's Portal (OpenAI-compatible).
+    NousPortal,
 }
 
 impl Provider {
-    pub const ALL: [Self; 3] = [Self::Anthropic, Self::OpenAi, Self::Custom];
+    pub const ALL: [Self; 5] = [
+        Self::Anthropic,
+        Self::OpenAi,
+        Self::Ollama,
+        Self::NousPortal,
+        Self::Custom,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Anthropic => "Anthropic (Claude)",
             Self::OpenAi => "OpenAI",
+            Self::Ollama => "Ollama (on this computer)",
+            Self::NousPortal => "Nous Portal",
             Self::Custom => "Other (OpenAI-compatible)",
         }
     }
@@ -44,6 +56,8 @@ impl Provider {
         match self {
             Self::Anthropic => "claude-sonnet-5-5",
             Self::OpenAi => "gpt-5",
+            Self::Ollama => "llama3.1",
+            Self::NousPortal => "Hermes-4-70B",
             Self::Custom => "",
         }
     }
@@ -58,6 +72,8 @@ impl Provider {
                 "claude-fable-5-1",
             ],
             Self::OpenAi => &["gpt-5", "gpt-5-mini"],
+            Self::Ollama => &["llama3.1", "qwen3", "mistral"],
+            Self::NousPortal => &["Hermes-4-70B", "Hermes-4-405B"],
             Self::Custom => &[],
         }
     }
@@ -66,6 +82,8 @@ impl Provider {
         match self {
             Self::Anthropic => "https://api.anthropic.com",
             Self::OpenAi => "https://api.openai.com/v1",
+            Self::Ollama => "http://localhost:11434/v1",
+            Self::NousPortal => "https://inference-api.nousresearch.com/v1",
             Self::Custom => "",
         }
     }
@@ -75,7 +93,8 @@ impl Provider {
         match self {
             Self::Anthropic => Some("https://console.anthropic.com/settings/keys"),
             Self::OpenAi => Some("https://platform.openai.com/api-keys"),
-            Self::Custom => None,
+            Self::NousPortal => Some("https://portal.nousresearch.com"),
+            Self::Ollama | Self::Custom => None,
         }
     }
 
@@ -84,13 +103,20 @@ impl Provider {
         match self {
             Self::Anthropic => "ai-anthropic",
             Self::OpenAi => "ai-openai",
+            Self::Ollama => "ai-ollama",
+            Self::NousPortal => "ai-nous",
             Self::Custom => "ai-custom",
         }
     }
 
     /// Local servers such as Ollama need no key.
     pub fn key_is_optional(self) -> bool {
-        self == Self::Custom
+        matches!(self, Self::Custom | Self::Ollama)
+    }
+
+    /// Whether the user can type the server address.
+    pub fn has_editable_address(self) -> bool {
+        matches!(self, Self::Custom | Self::Ollama)
     }
 }
 
@@ -104,6 +130,9 @@ pub struct AiConfig {
     pub openai_model: String,
     pub custom_model: String,
     pub custom_base_url: String,
+    pub ollama_model: String,
+    pub ollama_base_url: String,
+    pub nous_model: String,
 }
 
 impl Default for AiConfig {
@@ -113,7 +142,10 @@ impl Default for AiConfig {
             anthropic_model: Provider::Anthropic.default_model().into(),
             openai_model: Provider::OpenAi.default_model().into(),
             custom_model: String::new(),
-            custom_base_url: "http://localhost:11434/v1".into(),
+            custom_base_url: String::new(),
+            ollama_model: Provider::Ollama.default_model().into(),
+            ollama_base_url: Provider::Ollama.default_base_url().into(),
+            nous_model: Provider::NousPortal.default_model().into(),
         }
     }
 }
@@ -124,6 +156,8 @@ impl AiConfig {
             Provider::Anthropic => &self.anthropic_model,
             Provider::OpenAi => &self.openai_model,
             Provider::Custom => &self.custom_model,
+            Provider::Ollama => &self.ollama_model,
+            Provider::NousPortal => &self.nous_model,
         }
     }
 
@@ -132,12 +166,23 @@ impl AiConfig {
             Provider::Anthropic => &mut self.anthropic_model,
             Provider::OpenAi => &mut self.openai_model,
             Provider::Custom => &mut self.custom_model,
+            Provider::Ollama => &mut self.ollama_model,
+            Provider::NousPortal => &mut self.nous_model,
+        }
+    }
+
+    /// The address field being edited for providers that allow it.
+    pub fn address_mut(&mut self) -> &mut String {
+        match self.provider {
+            Provider::Ollama => &mut self.ollama_base_url,
+            _ => &mut self.custom_base_url,
         }
     }
 
     pub fn base_url(&self) -> &str {
         match self.provider {
             Provider::Custom => self.custom_base_url.trim_end_matches('/'),
+            Provider::Ollama => self.ollama_base_url.trim_end_matches('/'),
             p => p.default_base_url(),
         }
     }
@@ -145,7 +190,7 @@ impl AiConfig {
     /// Has the user chosen everything needed besides the key?
     pub fn is_complete(&self) -> bool {
         !self.model().trim().is_empty()
-            && (self.provider != Provider::Custom || !self.base_url().is_empty())
+            && (!self.provider.has_editable_address() || !self.base_url().is_empty())
     }
 }
 
@@ -190,7 +235,7 @@ impl AiClient<'_> {
                     "messages": [{"role": "user", "content": user}],
                 }),
             ),
-            Provider::OpenAi | Provider::Custom => {
+            Provider::OpenAi | Provider::Custom | Provider::Ollama | Provider::NousPortal => {
                 let mut headers = Vec::new();
                 if !self.api_key.trim().is_empty() {
                     headers.push(("authorization", format!("Bearer {}", self.api_key.trim())));
@@ -260,9 +305,11 @@ fn extract_text(provider: Provider, reply: &str) -> Result<String> {
                 .collect::<Vec<_>>()
                 .join("")
         }),
-        Provider::OpenAi | Provider::Custom => v["choices"][0]["message"]["content"]
-            .as_str()
-            .map(str::to_string),
+        Provider::OpenAi | Provider::Custom | Provider::Ollama | Provider::NousPortal => {
+            v["choices"][0]["message"]["content"]
+                .as_str()
+                .map(str::to_string)
+        }
     };
     text.ok_or_else(|| Error::Ai("the provider's answer had no text in it".into()))
 }
@@ -394,5 +441,42 @@ mod tests {
     fn unreadable_replies_are_errors() {
         assert!(extract_text(Provider::Anthropic, "not json").is_err());
         assert!(extract_text(Provider::OpenAi, r#"{"choices":[]}"#).is_err());
+    }
+
+    #[test]
+    fn ollama_needs_no_key_and_nous_uses_bearer() {
+        let http = FakeAi::new(r#"{"choices":[{"message":{"content":"OK"}}]}"#);
+        let mut cfg = AiConfig {
+            provider: Provider::Ollama,
+            ..AiConfig::default()
+        };
+        let client = AiClient {
+            http: &http,
+            config: &cfg,
+            api_key: "",
+        };
+        assert_eq!(client.complete("s", "u", 10).unwrap(), "OK");
+        assert_eq!(
+            http.sent.lock().unwrap()[0].0,
+            "http://localhost:11434/v1/chat/completions"
+        );
+
+        cfg.provider = Provider::NousPortal;
+        let client = AiClient {
+            http: &http,
+            config: &cfg,
+            api_key: "k",
+        };
+        assert_eq!(client.complete("s", "u", 10).unwrap(), "OK");
+        assert_eq!(
+            http.sent.lock().unwrap()[1].0,
+            "https://inference-api.nousresearch.com/v1/chat/completions"
+        );
+        let no_key = AiClient {
+            http: &http,
+            config: &cfg,
+            api_key: "",
+        };
+        assert!(no_key.complete("s", "u", 10).is_err());
     }
 }
