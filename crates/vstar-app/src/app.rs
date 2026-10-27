@@ -487,11 +487,17 @@ impl VStarApp {
                         row("JD range", Some(format!("{a:.1} – {b:.1}")));
                     }
                 });
-            if ui.button("VSP").clicked() {
-                self.vsp.open(ui.ctx(), &ds.star.name);
-            }
+            ui.horizontal(|ui| {
+                theme::icon(ui, theme::Icon::StarChart);
+                if ui.button("VSP").clicked() {
+                    self.vsp.open(ui.ctx(), &ds.star.name);
+                }
+            });
             if !ds.star.name.trim().is_empty() {
-                ui.hyperlink_to("View on VSX ↗", aavso::vsx_page_url(&ds.star.name));
+                ui.horizontal(|ui| {
+                    theme::icon(ui, theme::Icon::Book);
+                    ui.hyperlink_to("View on VSX ↗", aavso::vsx_page_url(&ds.star.name));
+                });
             }
         });
 

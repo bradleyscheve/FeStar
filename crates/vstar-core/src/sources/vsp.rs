@@ -15,13 +15,29 @@ const API_URL: &str = "https://apps.aavso.org/vsp/api/chart/";
 pub const DEFAULT_FOV: f64 = 60.0;
 /// The chart sizes offered to the user, in arcminutes.
 pub const FOVS: [f64; 8] = [7.5, 15.0, 30.0, 60.0, 120.0, 240.0, 480.0, 900.0];
-/// Faintest comparison star magnitude to label.
-pub const DEFAULT_MAG_LIMIT: f64 = 14.5;
+
+/// Faintest comparison star magnitude worth asking for at a field of view.
+/// Wide charts get crowded, and VSP refuses limits that are too faint for them.
+pub fn default_mag_limit(fov: f64) -> f64 {
+    match fov {
+        f if f <= 60.0 => 14.5,
+        f if f <= 120.0 => 13.5,
+        f if f <= 240.0 => 12.0,
+        f if f <= 480.0 => 10.5,
+        _ => 9.0,
+    }
+}
+
+/// How much brighter to try when VSP answers "bad request".
+const MAG_LIMIT_STEP: f64 = 1.0;
+const MIN_MAG_LIMIT: f64 = 6.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Chart {
     pub chart_id: String,
     pub image_url: String,
+    /// The magnitude limit the chart was made with.
+    pub mag_limit: f64,
     /// The chart's page on the VSP website.
     pub page_url: String,
 }
@@ -50,14 +66,31 @@ pub fn parse_chart(json: &str) -> Result<Chart> {
     Ok(Chart {
         chart_id,
         image_url,
+        mag_limit: v["maglimit"].as_f64().unwrap_or(0.0),
         page_url,
     })
 }
 
-/// Ask VSP for a chart of `star_name` and download its image.
+/// Ask VSP for a chart of `star_name` and download its image. If VSP rejects
+/// the request (usually because the magnitude limit is too faint for a wide
+/// field), retry with a brighter limit.
 pub fn fetch_chart(http: &dyn HttpClient, star_name: &str, fov: f64) -> Result<(Chart, Vec<u8>)> {
-    let json = http.get_text(&chart_request_url(star_name, fov, DEFAULT_MAG_LIMIT))?;
-    let chart = parse_chart(&json)?;
+    let mut mag_limit = default_mag_limit(fov);
+    let json = loop {
+        match http.get_text(&chart_request_url(star_name, fov, mag_limit)) {
+            Ok(json) => break json,
+            Err(Error::Network(m))
+                if m.contains("400") && mag_limit - MAG_LIMIT_STEP >= MIN_MAG_LIMIT =>
+            {
+                mag_limit -= MAG_LIMIT_STEP;
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    let mut chart = parse_chart(&json)?;
+    if chart.mag_limit <= 0.0 {
+        chart.mag_limit = mag_limit;
+    }
     let image = http.get_bytes(&chart.image_url)?;
     Ok((chart, image))
 }
@@ -73,6 +106,31 @@ mod tests {
             "https://apps.aavso.org/vsp/api/chart/?format=json&star=SS+Cyg&fov=60&maglimit=14.5"
         );
         assert!(chart_request_url("X", 7.5, 14.5).contains("fov=7.5"));
+    }
+
+    struct PickyVsp;
+    impl HttpClient for PickyVsp {
+        fn get_text(&self, url: &str) -> Result<String> {
+            let limit: f64 = url.split("maglimit=").nth(1).unwrap().parse().unwrap();
+            if limit > 12.0 {
+                Err(Error::Network(format!(
+                    "server answered 400 Bad Request for {url}"
+                )))
+            } else {
+                Ok(r#"{"chartid":"X1"}"#.into())
+            }
+        }
+        fn get_bytes(&self, _: &str) -> Result<Vec<u8>> {
+            Ok(vec![1])
+        }
+    }
+
+    #[test]
+    fn retries_with_brighter_limit_for_every_size() {
+        for fov in FOVS {
+            let (chart, _) = fetch_chart(&PickyVsp, "T CrB", fov).unwrap();
+            assert!(chart.mag_limit <= 12.0, "fov {fov}");
+        }
     }
 
     #[test]

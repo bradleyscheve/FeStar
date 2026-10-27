@@ -75,3 +75,63 @@ pub fn band_color(ui: &egui::Ui, band: &str) -> Color32 {
         c
     }
 }
+
+/// Small hand-drawn icons, so they look the same on every system (fonts
+/// differ in which symbols they include).
+#[derive(Clone, Copy)]
+pub enum Icon {
+    StarChart,
+    Book,
+}
+
+pub fn icon(ui: &mut egui::Ui, icon: Icon) {
+    let size = 16.0;
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    let color = ui.visuals().text_color();
+    let stroke = Stroke::new(1.2, color);
+    let c = rect.center();
+    match icon {
+        Icon::StarChart => {
+            painter.circle_stroke(c, 7.0, stroke);
+            for (dx, dy, r) in [
+                (-3.0, -2.5, 1.3),
+                (2.5, -3.5, 1.0),
+                (3.0, 2.0, 1.5),
+                (-2.0, 3.5, 1.0),
+            ] {
+                painter.circle_filled(c + Vec2::new(dx, dy), r, color);
+            }
+            painter.line_segment(
+                [c + Vec2::new(-1.0, -1.0), c + Vec2::new(2.5, 2.0)],
+                Stroke::new(0.8, color),
+            );
+        }
+        Icon::Book => {
+            let (l, r, t, b) = (c.x - 7.0, c.x + 7.0, c.y - 5.5, c.y + 5.5);
+            let left = [
+                egui::pos2(c.x, t + 1.0),
+                egui::pos2(l, t),
+                egui::pos2(l, b),
+                egui::pos2(c.x, b + 1.0),
+            ];
+            let right = [
+                egui::pos2(c.x, t + 1.0),
+                egui::pos2(r, t),
+                egui::pos2(r, b),
+                egui::pos2(c.x, b + 1.0),
+            ];
+            painter.add(egui::Shape::closed_line(left.to_vec(), stroke));
+            painter.add(egui::Shape::closed_line(right.to_vec(), stroke));
+            for dy in [-1.5, 1.0] {
+                painter.line_segment(
+                    [
+                        egui::pos2(l + 2.5, c.y + dy),
+                        egui::pos2(c.x - 2.0, c.y + dy + 0.8),
+                    ],
+                    Stroke::new(0.8, color),
+                );
+            }
+        }
+    }
+}

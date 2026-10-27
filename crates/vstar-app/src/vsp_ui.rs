@@ -105,9 +105,7 @@ impl VspState {
                 if let Some(chart) = &self.chart {
                     ui.label(format!(
                         "Field of view {} arcmin, comparison stars to magnitude {}. Chart {}.",
-                        self.fov,
-                        vsp::DEFAULT_MAG_LIMIT,
-                        chart.chart_id
+                        self.fov, chart.mag_limit, chart.chart_id
                     ));
                     ui.hyperlink_to("Open in VSP on the web ↗", &chart.page_url);
                 }
