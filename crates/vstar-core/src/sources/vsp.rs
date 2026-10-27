@@ -118,22 +118,33 @@ pub fn fetch_chart(http: &dyn HttpClient, star_name: &str, fov: f64) -> Result<(
     for extra in [
         fallback_image_url(&chart.chart_id),
         format!("https://apps.aavso.org/vsp/chart/{}.png", chart.chart_id),
+        // The address shown in VSP's own documentation.
+        format!(
+            "https://www.aavso.org/apps/vsp/chart/{}.png",
+            chart.chart_id
+        ),
     ] {
         if !candidates.contains(&extra) {
             candidates.push(extra);
         }
     }
-    let mut last_error = None;
+    let mut failures = Vec::new();
     for url in candidates {
-        match http.get_bytes(&url) {
+        // VSP's web service picks its reply format from the Accept header, and
+        // answers a request that doesn't ask for a picture with an error.
+        match http.get_bytes_with_headers(&url, &[("Accept", "image/png,image/*;q=0.9,*/*;q=0.5")])
+        {
             Ok(image) => {
                 chart.image_url = url;
                 return Ok((chart, image));
             }
-            Err(e) => last_error = Some(e),
+            Err(e) => failures.push(format!("{url} ({e})")),
         }
     }
-    Err(last_error.unwrap_or_else(|| Error::Network("VSP sent no chart picture".into())))
+    Err(Error::Network(format!(
+        "couldn't download the chart picture. Tried: {}",
+        failures.join("; ")
+    )))
 }
 
 #[cfg(test)]

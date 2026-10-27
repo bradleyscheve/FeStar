@@ -23,6 +23,11 @@ pub trait HttpClient: Send + Sync {
         ))
     }
 
+    /// Like `get_bytes`, with extra request `headers`.
+    fn get_bytes_with_headers(&self, url: &str, _headers: &[(&str, &str)]) -> Result<Vec<u8>> {
+        self.get_bytes(url)
+    }
+
     /// POST a JSON `body` to `url` with extra `headers` and return the
     /// response body. On an error status the returned error includes the
     /// server's explanation, which AI providers use for "invalid API key"
@@ -98,6 +103,23 @@ impl HttpClient for ReqwestClient {
             .get(url)
             .send()
             .map_err(|e| Error::Network(e.to_string()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(Error::Network(format!(
+                "server answered {status} for {url}"
+            )));
+        }
+        resp.bytes()
+            .map(|b| b.to_vec())
+            .map_err(|e| Error::Network(e.to_string()))
+    }
+
+    fn get_bytes_with_headers(&self, url: &str, headers: &[(&str, &str)]) -> Result<Vec<u8>> {
+        let mut req = self.inner.get(url);
+        for (name, value) in headers {
+            req = req.header(*name, *value);
+        }
+        let resp = req.send().map_err(|e| Error::Network(e.to_string()))?;
         let status = resp.status();
         if !status.is_success() {
             return Err(Error::Network(format!(
