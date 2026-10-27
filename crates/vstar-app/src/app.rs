@@ -496,7 +496,14 @@ impl VStarApp {
             if !ds.star.name.trim().is_empty() {
                 ui.horizontal(|ui| {
                     theme::icon(ui, theme::Icon::Book);
-                    ui.hyperlink_to("View on VSX ↗", aavso::vsx_page_url(&ds.star.name));
+                    if ui
+                        .button("VSX")
+                        .on_hover_text("Open this star on AAVSO VSX in your browser")
+                        .clicked()
+                    {
+                        ui.ctx()
+                            .open_url(egui::OpenUrl::new_tab(aavso::vsx_page_url(&ds.star.name)));
+                    }
                 });
             }
         });
