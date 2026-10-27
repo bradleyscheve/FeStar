@@ -9,6 +9,13 @@ pub trait HttpClient: Send + Sync {
     /// Fetch `url` and return the response body as text.
     fn get_text(&self, url: &str) -> Result<String>;
 
+    /// Like `get_text`, with extra request `headers` (for authenticated APIs).
+    fn get_text_with_headers(&self, _url: &str, _headers: &[(&str, &str)]) -> Result<String> {
+        Err(Error::Network(
+            "this HTTP client can't send custom headers".into(),
+        ))
+    }
+
     /// Fetch `url` and return the response body as raw bytes (images).
     fn get_bytes(&self, _url: &str) -> Result<Vec<u8>> {
         Err(Error::Network(
@@ -58,6 +65,23 @@ impl HttpClient for ReqwestClient {
             )));
         }
         resp.text().map_err(|e| Error::Network(e.to_string()))
+    }
+
+    fn get_text_with_headers(&self, url: &str, headers: &[(&str, &str)]) -> Result<String> {
+        let mut req = self.inner.get(url);
+        for (name, value) in headers {
+            req = req.header(*name, *value);
+        }
+        let resp = req.send().map_err(|e| Error::Network(e.to_string()))?;
+        let status = resp.status();
+        let text = resp.text().map_err(|e| Error::Network(e.to_string()))?;
+        if !status.is_success() {
+            let detail: String = text.chars().take(400).collect();
+            return Err(Error::Network(format!(
+                "the server answered {status}: {detail}"
+            )));
+        }
+        Ok(text)
     }
 
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>> {

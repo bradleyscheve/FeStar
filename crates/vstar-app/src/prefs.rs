@@ -74,6 +74,9 @@ pub struct PrefsState {
     /// Result of the last action, shown under the key box: (ok, message).
     message: Option<(bool, String)>,
     test: Option<Task<()>>,
+    /// Models the provider reported, for the provider they were fetched from.
+    models: Option<(Provider, Vec<String>)>,
+    fetching: Option<Task<Vec<String>>>,
 }
 
 impl PrefsState {
@@ -82,6 +85,7 @@ impl PrefsState {
             return;
         }
         self.finish_test();
+        self.finish_fetch(config.provider);
 
         let mut open = true;
         egui::Window::new("Preferences")
@@ -92,6 +96,23 @@ impl PrefsState {
             .min_width(460.0)
             .show(ctx, |ui| self.contents(ui, config, secrets));
         self.open = open;
+    }
+
+    fn finish_fetch(&mut self, provider: Provider) {
+        let Some(result) = self.fetching.as_ref().and_then(Task::poll) else {
+            return;
+        };
+        self.fetching = None;
+        match result {
+            Ok(list) if list.is_empty() => {
+                self.message = Some((false, "The provider listed no models.".into()))
+            }
+            Ok(list) => {
+                self.message = Some((true, format!("Found {} models.", list.len())));
+                self.models = Some((provider, list));
+            }
+            Err(e) => self.message = Some((false, e.to_string())),
+        }
     }
 
     fn finish_test(&mut self) {
@@ -150,13 +171,25 @@ impl PrefsState {
                 let provider = config.provider;
                 ui.horizontal(|ui| {
                     ui.add(egui::TextEdit::singleline(config.model_mut()).desired_width(200.0));
-                    if !provider.suggested_models().is_empty() {
+                    let fetched = self
+                        .models
+                        .as_ref()
+                        .filter(|(p, _)| *p == provider)
+                        .map(|(_, list)| list.clone());
+                    let choices: Vec<String> = fetched.unwrap_or_else(|| {
+                        provider
+                            .suggested_models()
+                            .iter()
+                            .map(|m| m.to_string())
+                            .collect()
+                    });
+                    if !choices.is_empty() {
                         egui::ComboBox::from_id_salt("ai_model_suggestions")
-                            .selected_text("Suggestions")
+                            .selected_text("Choose")
                             .show_ui(ui, |ui| {
-                                for m in provider.suggested_models() {
-                                    if ui.selectable_label(config.model() == *m, *m).clicked() {
-                                        *config.model_mut() = (*m).to_string();
+                                for m in &choices {
+                                    if ui.selectable_label(config.model() == m, m).clicked() {
+                                        *config.model_mut() = m.clone();
                                     }
                                 }
                             });
@@ -237,6 +270,30 @@ impl PrefsState {
                         .test()
                     },
                 ));
+            }
+            let fetching = self.fetching.is_some();
+            if ui
+                .add_enabled(
+                    !fetching && (secrets.key(provider).is_some() || provider.key_is_optional()),
+                    egui::Button::new("Fetch model list"),
+                )
+                .on_hover_text("Ask the provider which models it offers right now")
+                .clicked()
+            {
+                self.message = None;
+                let (cfg, key) = (config.clone(), secrets.key(provider).unwrap_or_default());
+                self.fetching = Some(Task::spawn(ui.ctx(), "Fetching model list", move |_| {
+                    let http = ReqwestClient::new()?;
+                    AiClient {
+                        http: &http,
+                        config: &cfg,
+                        api_key: &key,
+                    }
+                    .list_models()
+                }));
+            }
+            if fetching {
+                ui.spinner();
             }
             if testing {
                 ui.spinner();

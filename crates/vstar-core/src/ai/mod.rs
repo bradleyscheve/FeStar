@@ -57,7 +57,8 @@ impl Provider {
             Self::Anthropic => "claude-sonnet-5-5",
             Self::OpenAi => "gpt-5",
             Self::Ollama => "llama3.1",
-            Self::NousPortal => "Hermes-4-70B",
+            // Nous retires models often; the user picks from the live list.
+            Self::NousPortal => "",
             Self::Custom => "",
         }
     }
@@ -73,7 +74,7 @@ impl Provider {
             ],
             Self::OpenAi => &["gpt-5", "gpt-5-mini"],
             Self::Ollama => &["llama3.1", "qwen3", "mistral"],
-            Self::NousPortal => &["Hermes-4-70B", "Hermes-4-405B"],
+            Self::NousPortal => &[],
             Self::Custom => &[],
         }
     }
@@ -262,6 +263,36 @@ impl AiClient<'_> {
         extract_text(self.config.provider, &reply)
     }
 
+    /// Ask the provider which models it currently offers.
+    pub fn list_models(&self) -> Result<Vec<String>> {
+        if self.api_key.trim().is_empty() && !self.config.provider.key_is_optional() {
+            return Err(Error::Ai(
+                "no API key is saved; add one in File > Preferences".into(),
+            ));
+        }
+        let key = self.api_key.trim();
+        let headers: Vec<(&str, String)> = match self.config.provider {
+            Provider::Anthropic => vec![
+                ("x-api-key", key.to_string()),
+                ("anthropic-version", "2023-06-01".into()),
+            ],
+            _ if key.is_empty() => Vec::new(),
+            _ => vec![("authorization", format!("Bearer {key}"))],
+        };
+        let path = if self.config.provider == Provider::Anthropic {
+            "/v1/models?limit=100"
+        } else {
+            "/models"
+        };
+        let header_refs: Vec<(&str, &str)> =
+            headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let reply = self
+            .http
+            .get_text_with_headers(&format!("{}{path}", self.config.base_url()), &header_refs)
+            .map_err(|e| Error::Ai(friendly_error(&e.to_string())))?;
+        parse_model_list(&reply)
+    }
+
     /// Make a trivial request to check the key and model work.
     pub fn test(&self) -> Result<()> {
         let answer = self.complete("Reply with the single word OK.", "Connection test.", 16)?;
@@ -291,6 +322,21 @@ fn friendly_error(raw: &str) -> String {
         Some(h) => format!("{h} ({raw})"),
         None => raw.to_string(),
     }
+}
+
+fn parse_model_list(reply: &str) -> Result<Vec<String>> {
+    let v: Value = serde_json::from_str(reply)
+        .map_err(|e| Error::Ai(format!("unreadable model list from provider: {e}")))?;
+    let mut ids: Vec<String> = v["data"]
+        .as_array()
+        .or_else(|| v.as_array())
+        .ok_or_else(|| Error::Ai("the provider's model list was empty or unreadable".into()))?
+        .iter()
+        .filter_map(|m| m["id"].as_str().or_else(|| m.as_str()))
+        .map(str::to_string)
+        .collect();
+    ids.sort();
+    Ok(ids)
 }
 
 fn extract_text(provider: Provider, reply: &str) -> Result<String> {
@@ -441,6 +487,13 @@ mod tests {
     fn unreadable_replies_are_errors() {
         assert!(extract_text(Provider::Anthropic, "not json").is_err());
         assert!(extract_text(Provider::OpenAi, r#"{"choices":[]}"#).is_err());
+    }
+
+    #[test]
+    fn parses_model_lists() {
+        let ids = parse_model_list(r#"{"data":[{"id":"b"},{"id":"a"}]}"#).unwrap();
+        assert_eq!(ids, ["a", "b"]);
+        assert!(parse_model_list(r#"{"error":"x"}"#).is_err());
     }
 
     #[test]
