@@ -666,8 +666,6 @@ impl VStarApp {
     fn side_panel(&mut self, ui: &mut egui::Ui) {
         let busy = self.job.is_some();
         ui.add_space(8.0);
-        ui.heading(RichText::new("FeStar").strong());
-        ui.label(RichText::new("Variable star light curves").weak());
         ui.add_space(8.0);
 
         theme::card(ui).show(ui, |ui| {

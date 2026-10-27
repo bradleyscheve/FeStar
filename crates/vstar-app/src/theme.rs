@@ -248,61 +248,70 @@ pub fn star_icon(
         }
         StarLook::Nova => {
             const K: f32 = NOVA_SCALE;
-            // Like the usual artist's picture: a red donor star on the left,
-            // a stream of gas that narrows toward a flat, glowing disc around
-            // the white dwarf at the lower right.
-            let donor_c = egui::pos2(rect.left() + 15.5 * K, c.y - 2.5 * K);
-            let disc_c = egui::pos2(rect.right() - 17.0 * K, c.y + 6.5 * K);
-            let donor_col = Color32::from_rgb(235, 80, 30);
-            let stream_hot = Color32::from_rgb(255, 215, 90);
-            let stream_cool = Color32::from_rgb(160, 185, 255);
-            // The stream: a tapered strip fading from yellow to blue.
-            let mut mesh = egui::Mesh::default();
-            let ends = [
-                (donor_c + Vec2::new(5.0 * K, -13.0 * K), stream_hot),
-                (donor_c + Vec2::new(5.0 * K, 13.0 * K), stream_hot),
-                (disc_c + Vec2::new(-6.0 * K, -7.5 * K), stream_cool),
-                (disc_c + Vec2::new(-2.0 * K, -2.0 * K), stream_cool),
-            ];
-            for (pos, color) in ends {
-                mesh.colored_vertex(pos, color);
-            }
-            mesh.add_triangle(0, 1, 2);
-            mesh.add_triangle(1, 3, 2);
-            painter.add(egui::Shape::mesh(mesh));
-            // The disc: a flattened ring, bluish white, brighter in the middle.
-            let ellipse = |rx: f32, ry: f32| -> Vec<egui::Pos2> {
-                (0..32)
-                    .map(|i| {
-                        let a = i as f32 / 32.0 * std::f32::consts::TAU;
-                        disc_c + Vec2::new(a.cos() * rx, a.sin() * ry)
-                    })
-                    .collect()
+            // After the artist's sketch: a big dark red donor star on the
+            // left, a stream that runs orange, yellow, then white as it
+            // narrows toward a tilted pale blue disc with a white dwarf at
+            // its centre. Positions are in sketch pixels (donor centre
+            // 160,160), scaled to fit the same box as before.
+            let u = 0.126 * K;
+            let at = |x: f32, y: f32| {
+                egui::pos2(
+                    rect.left() + (x - 10.0) * u,
+                    rect.center().y + (y - 160.0) * u,
+                )
             };
+            let donor_col = Color32::from_rgb(140, 0, 20);
+            let mut mesh = egui::Mesh::default();
+            // (top, bottom) edge of the stream at each stage, with its colour.
+            let stages = [
+                (
+                    at(272.0, 172.0),
+                    at(268.0, 222.0),
+                    Color32::from_rgb(255, 125, 40),
+                ),
+                (
+                    at(305.0, 172.0),
+                    at(305.0, 205.0),
+                    Color32::from_rgb(255, 235, 0),
+                ),
+                (
+                    at(360.0, 168.0),
+                    at(360.0, 192.0),
+                    Color32::from_rgb(255, 255, 40),
+                ),
+                (at(364.0, 166.0), at(364.0, 192.0), Color32::WHITE),
+            ];
+            for (top, bottom, color) in stages {
+                mesh.colored_vertex(top, color);
+                mesh.colored_vertex(bottom, color);
+            }
+            let tip = at(468.0, 147.0);
+            mesh.colored_vertex(tip, Color32::WHITE);
+            for i in 0..3u32 {
+                let k = i * 2;
+                mesh.add_triangle(k, k + 1, k + 2);
+                mesh.add_triangle(k + 1, k + 3, k + 2);
+            }
+            mesh.add_triangle(6, 7, 8);
+            painter.add(egui::Shape::mesh(mesh));
+            // The disc, an ellipse tilted up to the right.
+            let disc_c = at(478.0, 181.0);
+            let (sin, cos) = (-0.42_f32).sin_cos();
+            let ellipse: Vec<egui::Pos2> = (0..32)
+                .map(|i| {
+                    let a = i as f32 / 32.0 * std::f32::consts::TAU;
+                    let (x, y) = (a.cos() * 85.0 * u, a.sin() * 36.0 * u);
+                    disc_c + Vec2::new(x * cos - y * sin, x * sin + y * cos)
+                })
+                .collect();
             painter.add(egui::Shape::convex_polygon(
-                ellipse(16.0 * K, 7.5 * K),
-                Color32::from_rgb(110, 145, 205),
-                Stroke::new(0.8, rim.gamma_multiply(0.7)),
+                ellipse,
+                Color32::from_rgb(165, 205, 255),
+                Stroke::new(0.6, rim.gamma_multiply(0.6)),
             ));
-            painter.add(egui::Shape::convex_polygon(
-                ellipse(11.0 * K, 5.2 * K),
-                Color32::from_rgb(170, 200, 240),
-                Stroke::NONE,
-            ));
-            painter.add(egui::Shape::convex_polygon(
-                ellipse(5.5 * K, 2.6 * K),
-                Color32::from_rgb(225, 240, 255),
-                Stroke::NONE,
-            ));
-            // The white dwarf itself, small, hot and blue-white.
-            painter.circle_filled(disc_c, 2.6 * K, Color32::from_rgb(245, 250, 255));
-            painter.circle_stroke(
-                disc_c,
-                3.4 * K,
-                Stroke::new(1.0, Color32::from_rgba_unmultiplied(150, 200, 255, 150)),
-            );
+            painter.circle_filled(disc_c, 9.0 * u * 1.4, Color32::WHITE);
             // The donor star, over the start of the stream.
-            star(donor_c, 15.0 * K, donor_col);
+            star(at(160.0, 160.0), 125.0 * u, donor_col);
         }
     }
     response
