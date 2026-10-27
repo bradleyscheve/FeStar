@@ -1,0 +1,32 @@
+#TYPE=Extended
+#OBSCODE=BSGA
+#SOFTWARE=ASTAP, v2026.03.05
+#DELIM=tab
+#DATE=JD
+#OBSTYPE=DSLR
+#COMMENTS=
+#Only the variable is transformed
+#Transf corr B = Tb_bv * Tbv *((b-v)var - (b-v)comp),   Transf corr V = Tv_bv * Tbv *((b-v)var - (b-v)comp),   Transf corr R = Tr_vr * Tvr *((v-r)var - (v-r)comp)
+#Tbv= 1.669
+#Tb_bv= 0.356
+#Tv_bv= -0.045
+#Tvr= 1.369
+#Tv_vr= -0.099
+#Tr_vr= -0.487
+#
+#NAME	DATE	MAG	MERR	FILT	TRANS	MTYPE	CNAME	CMAG	KNAME	KMAG	AIRMASS	GROUP	CHART	NOTES
+T CrB	2461289.56664	8.429	0.1522	R	YES	STD	ENSEMBLE	na	000-BBW-779	9.434	1.345	na	X43052CRV	Transf corr. -0.892=-0.487*1.369*(1.651-0.314). Filter used TR.Ignored invalid 000-BPX-082. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.56675	10.243	0.0170	V	YES	STD	ENSEMBLE	na	000-BBW-779	10.127	1.345	na	X43052CRV	Transf corr. -0.008=-0.045*1.669*(0.390-0.279). Filter used TG.Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.56809	10.226	0.0170	V	YES	STD	ENSEMBLE	na	000-BBW-779	10.135	1.353	na	X43052CRV	Transf corr. -0.009=-0.045*1.669*(0.395-0.269). Filter used TG.Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.56809	11.636	0.0417	B	YES	STD	ENSEMBLE	na	000-BBW-779	10.928	1.353	na	X43052CRV	Transf corr. 0.121=0.356*1.669*(1.267-1.064). Filter used TB.Ignored invalid 000-BMH-419. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.56809	8.220	0.1522	R	YES	STD	ENSEMBLE	na	000-BBW-779	9.569	1.353	na	X43052CRV	Transf corr. -1.022=-0.487*1.369*(0.594--0.939). Filter used TR.Ignored invalid 000-BMH-419. Ignored invalid 000-BPX-082. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.56896	8.697	0.1522	R	YES	STD	ENSEMBLE	na	000-BBW-779	9.868	1.359	na	X43052CRV	Transf corr. -0.784=-0.487*1.369*(1.562-0.386). Filter used TR.Ignored invalid 000-BPX-082. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.56942	10.148	0.0170	V	YES	STD	ENSEMBLE	na	000-BBW-779	10.174	1.362	na	X43052CRV	Transf corr. -0.089=-0.045*1.669*(0.420--0.770). Filter used TG.Ignored invalid 000-BPX-082. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.56942	11.541	0.0377	B	YES	STD	ENSEMBLE	na	000-BBW-779	10.905	1.362	na	X43052CRV	Transf corr. 0.085=0.356*1.669*(1.229-1.085). Filter used TB.Ignored invalid 000-BMH-419. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.57074	8.765	0.1522	R	YES	STD	ENSEMBLE	na	000-BBW-779	9.725	1.370	na	X43052CRV	Transf corr. -0.819=-0.487*1.369*(0.633--0.596). Filter used TR.Ignored invalid 000-BJS-901. Ignored invalid 000-BPX-082. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.57076	11.508	0.0357	B	YES	STD	ENSEMBLE	na	000-BBW-779	10.929	1.371	na	X43052CRV	Transf corr. 0.073=0.356*1.669*(1.201-1.078). Filter used TB.Ignored invalid 000-BMH-419. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.57076	10.172	0.0170	V	YES	STD	ENSEMBLE	na	000-BBW-779	10.159	1.371	na	X43052CRV	Transf corr. -0.088=-0.045*1.669*(0.408--0.759). Filter used TG.Ignored invalid 000-BPX-082. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.57183	8.028	0.1522	R	YES	STD	ENSEMBLE	na	000-BBW-779	9.540	1.378	na	X43052CRV	Transf corr. -1.106=-0.487*1.369*(1.006--0.653). Filter used TR.Ignored invalid 000-BBW-782. Warning could not retrieve documented COMP magnitude for this filter. For Red and Sloan filters select AAVSO annotation online. For CV select in Gaia comp stars the local D50 or D80 or online Gaia BP.Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.57190	11.521	0.0417	B	YES	STD	ENSEMBLE	na	000-BBW-779	10.958	1.378	na	X43052CRV	Transf corr. 0.078=0.356*1.669*(0.795-0.664). Filter used TB.Ignored invalid 000-BMH-419. Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+T CrB	2461289.57190	10.221	0.0192	V	YES	STD	ENSEMBLE	na	000-BBW-779	10.144	1.378	na	X43052CRV	Transf corr. -0.010=-0.045*1.669*(0.795-0.664). Filter used TG.Ensemble: 000-BBW-782|000-BBW-787|000-BJS-901|000-BMH-419|000-BPX-082 ( aperture=3.0 HFD, annulus=6 HFD)
+
