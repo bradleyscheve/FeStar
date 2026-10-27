@@ -4,6 +4,10 @@
 mod app;
 mod light_curve;
 mod loader;
+mod phase_ui;
+mod prefs;
+mod search_ui;
+mod task;
 mod theme;
 
 fn main() -> eframe::Result {

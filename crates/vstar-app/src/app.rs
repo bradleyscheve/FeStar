@@ -2,10 +2,15 @@ use std::collections::HashSet;
 
 use egui::{Align, Layout, RichText};
 use serde::{Deserialize, Serialize};
+use vstar_core::ai::AiConfig;
+use vstar_core::analysis::TimeSeries;
 use vstar_core::sources::aavso;
-use vstar_core::{Dataset, StarQuery, bands, time};
+use vstar_core::{Dataset, Observation, StarQuery, Validation, bands, time};
 
 use crate::loader::{Job, Request};
+use crate::phase_ui::PhaseState;
+use crate::prefs::{PrefsState, Secrets};
+use crate::search_ui::SearchState;
 use crate::{light_curve, theme};
 
 const BAA_DATABASE_URL: &str = "https://britastro.org/vssdb/data.php";
@@ -30,6 +35,15 @@ impl SourceKind {
     }
 }
 
+/// Which view fills the main area.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tab {
+    #[default]
+    LightCurve,
+    PhasePlot,
+    PeriodSearch,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThemeChoice {
     System,
@@ -44,11 +58,18 @@ struct Settings {
     source: SourceKind,
     star_name: String,
     limit_dates: bool,
+    /// The date ranges are not remembered: each run starts with the past
+    /// year (see `default_ranges`).
+    #[serde(skip)]
     min_jd: String,
+    #[serde(skip)]
     max_jd: String,
     limit_calendar: bool,
+    #[serde(skip)]
     min_date: String,
+    #[serde(skip)]
     max_date: String,
+    ai: AiConfig,
     show_errors: bool,
     show_discrepant: bool,
     show_fainter_than: bool,
@@ -67,6 +88,7 @@ impl Default for Settings {
             limit_calendar: false,
             min_date: String::new(),
             max_date: String::new(),
+            ai: AiConfig::default(),
             show_errors: true,
             show_discrepant: false,
             show_fainter_than: true,
@@ -82,13 +104,30 @@ enum Status {
     Error(String),
 }
 
+/// The four default date-range strings: from-JD, to-JD, from-date, to-date.
+/// "From" is exactly one year before now and "to" is now.
+fn default_ranges(now_jd: f64) -> [String; 4] {
+    let from = time::one_year_before(now_jd);
+    [
+        format!("{from:.4}"),
+        format!("{now_jd:.4}"),
+        time::jd_to_date_string(from),
+        time::jd_to_date_string(now_jd),
+    ]
+}
+
 pub struct VStarApp {
     settings: Settings,
-    dataset: Option<Dataset>,
-    hidden_bands: HashSet<String>,
+    pub(crate) dataset: Option<Dataset>,
+    pub(crate) hidden_bands: HashSet<String>,
     job: Option<Job>,
     status: Status,
-    reset_view: bool,
+    pub(crate) reset_view: bool,
+    pub(crate) tab: Tab,
+    pub(crate) phase: PhaseState,
+    pub(crate) search: SearchState,
+    pub(crate) prefs: PrefsState,
+    secrets: Secrets,
 }
 
 impl VStarApp {
@@ -106,6 +145,13 @@ impl VStarApp {
             };
             Job::start(request, cc.egui_ctx.clone())
         });
+        let mut settings = settings;
+        [
+            settings.min_jd,
+            settings.max_jd,
+            settings.min_date,
+            settings.max_date,
+        ] = default_ranges(time::now_jd());
         Self {
             settings,
             dataset: None,
@@ -113,7 +159,52 @@ impl VStarApp {
             job,
             status: Status::Ready,
             reset_view: false,
+            tab: Tab::LightCurve,
+            phase: PhaseState::default(),
+            search: SearchState::default(),
+            prefs: PrefsState::default(),
+            secrets: Secrets::new(),
         }
+    }
+
+    /// The observations that analysis tools use: those in shown bands that
+    /// are good measurements (not bad, not "fainter than", and not
+    /// discrepant unless those are shown).
+    pub(crate) fn analysis_observations(&self) -> Vec<&Observation> {
+        let Some(ds) = &self.dataset else {
+            return Vec::new();
+        };
+        ds.observations
+            .iter()
+            .filter(|o| !self.hidden_bands.contains(&o.band))
+            .filter(|o| !o.fainter_than)
+            .filter(|o| match o.validation {
+                Validation::Good => true,
+                Validation::Discrepant => self.settings.show_discrepant,
+                Validation::Bad => false,
+            })
+            .collect()
+    }
+
+    pub(crate) fn analysis_series(&self) -> TimeSeries {
+        TimeSeries::from_observations(self.analysis_observations())
+    }
+
+    /// Is an AI provider set up with a key (or one that needs none)?
+    pub(crate) fn ai_configured(&self) -> bool {
+        let provider = self.settings.ai.provider;
+        self.settings.ai.is_complete()
+            && (provider.key_is_optional() || self.secrets.key(provider).is_some())
+    }
+
+    /// The saved provider settings and key, or a message saying what to set up.
+    pub(crate) fn require_ai(&self) -> Result<(AiConfig, String), String> {
+        let config = self.settings.ai.clone();
+        let key = self.secrets.key(config.provider).unwrap_or_default();
+        if !config.is_complete() || (key.is_empty() && !config.provider.key_is_optional()) {
+            return Err("Connect an AI provider first: File > Preferences.".into());
+        }
+        Ok((config, key))
     }
 
     fn start_load(&mut self, ctx: &egui::Context) {
@@ -182,6 +273,9 @@ impl VStarApp {
                 self.hidden_bands.clear();
                 self.dataset = Some(ds);
                 self.reset_view = true;
+                self.phase.reset();
+                self.search.reset();
+                self.tab = Tab::LightCurve;
             }
             Err(vstar_core::Error::Cancelled) => {
                 self.status = Status::Info("Loading cancelled.".into())
@@ -198,9 +292,33 @@ impl VStarApp {
                     self.start_load(ui.ctx());
                     ui.close();
                 }
+                if ui.button("Preferences…").clicked() {
+                    self.prefs.open = true;
+                    ui.close();
+                }
                 ui.separator();
                 if ui.button("Quit").clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
+            ui.menu_button("Analysis", |ui| {
+                let has_data = self.dataset.is_some();
+                let tip = "Load a star first";
+                if ui
+                    .add_enabled(has_data, egui::Button::new("Phase plot…"))
+                    .on_disabled_hover_text(tip)
+                    .clicked()
+                {
+                    self.open_phase_dialog();
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(has_data, egui::Button::new("DC DFT period search…"))
+                    .on_disabled_hover_text(tip)
+                    .clicked()
+                {
+                    self.open_search_dialog();
+                    ui.close();
                 }
             });
             ui.menu_button("View", |ui| {
@@ -417,6 +535,38 @@ impl VStarApp {
         });
     }
 
+    fn tab_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.tab, Tab::LightCurve, "Light curve");
+            if self.phase.active.is_some() {
+                ui.selectable_value(&mut self.tab, Tab::PhasePlot, "Phase plot");
+            }
+            if self.search.result.is_some() {
+                ui.selectable_value(&mut self.tab, Tab::PeriodSearch, "Period search");
+            }
+            if let (Tab::PhasePlot, Some((period, epoch))) = (self.tab, self.phase.active) {
+                ui.separator();
+                ui.label(RichText::new(format!("Period {period} d, epoch JD {epoch:.4}")).weak());
+                if ui.small_button("Change…").clicked() {
+                    self.open_phase_dialog();
+                }
+            }
+        });
+    }
+
+    fn show_plot(&mut self, ui: &mut egui::Ui, mode: light_curve::Mode) {
+        let Some(ds) = &self.dataset else { return };
+        let opts = light_curve::Options {
+            mode,
+            hidden_bands: &self.hidden_bands,
+            show_discrepant: self.settings.show_discrepant,
+            show_fainter_than: self.settings.show_fainter_than,
+            show_errors: self.settings.show_errors,
+            reset_view: std::mem::take(&mut self.reset_view),
+        };
+        light_curve::show(ui, ds, &opts);
+    }
+
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if let Some(job) = &self.job {
@@ -432,6 +582,17 @@ impl VStarApp {
                 }
                 return;
             }
+            let analysis = self.search.running().or_else(|| self.phase.task());
+            if let Some((description, progress)) = analysis {
+                ui.spinner();
+                ui.label(description);
+                ui.add(egui::ProgressBar::new(progress).desired_width(160.0));
+                if ui.small_button("Cancel").clicked() {
+                    self.search.cancel();
+                    self.phase.cancel();
+                }
+                return;
+            }
             match &self.status {
                 Status::Ready => ui.label(RichText::new("Ready").weak()),
                 Status::Info(msg) => ui.label(msg),
@@ -444,6 +605,12 @@ impl VStarApp {
 impl eframe::App for VStarApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.finish_load();
+        self.poll_search();
+        self.poll_phase_ai();
+        let ctx = ui.ctx().clone();
+        self.show_phase_dialog(&ctx);
+        self.show_search_dialog(&ctx);
+        self.prefs.show(&ctx, &mut self.settings.ai, &self.secrets);
 
         egui::Panel::top("menu").show(ui, |ui| self.top_bar(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
@@ -454,18 +621,8 @@ impl eframe::App for VStarApp {
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| self.side_panel(ui));
             });
-        egui::CentralPanel::default().show(ui, |ui| match &self.dataset {
-            Some(ds) => {
-                let opts = light_curve::Options {
-                    hidden_bands: &self.hidden_bands,
-                    show_discrepant: self.settings.show_discrepant,
-                    show_fainter_than: self.settings.show_fainter_than,
-                    show_errors: self.settings.show_errors,
-                    reset_view: std::mem::take(&mut self.reset_view),
-                };
-                light_curve::show(ui, ds, &opts);
-            }
-            None => {
+        egui::CentralPanel::default().show(ui, |ui| {
+            if self.dataset.is_none() {
                 ui.centered_and_justified(|ui| {
                     ui.label(
                         RichText::new(
@@ -475,6 +632,27 @@ impl eframe::App for VStarApp {
                         .size(16.0),
                     );
                 });
+                return;
+            }
+            self.tab_bar(ui);
+            ui.add_space(4.0);
+            match self.tab {
+                Tab::LightCurve => self.show_plot(ui, light_curve::Mode::Time),
+                Tab::PhasePlot => match self.phase.active {
+                    Some((period, epoch)) => {
+                        let two_cycles = self.phase.two_cycles;
+                        self.show_plot(
+                            ui,
+                            light_curve::Mode::Phase {
+                                epoch,
+                                period,
+                                two_cycles,
+                            },
+                        );
+                    }
+                    None => self.tab = Tab::LightCurve,
+                },
+                Tab::PeriodSearch => self.show_search_results(ui),
             }
         });
     }

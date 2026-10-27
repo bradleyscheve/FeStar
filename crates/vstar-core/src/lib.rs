@@ -6,10 +6,13 @@
 //! Parts of this crate are ported from AAVSO VStar
 //! (<https://github.com/AAVSO/VStar>), which is licensed under the AGPL v3.
 
+pub mod ai;
+pub mod analysis;
 pub mod bands;
 pub mod error;
 pub mod http;
 pub mod model;
+pub mod secrets;
 pub mod sources;
 pub mod time;
 
