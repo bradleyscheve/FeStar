@@ -180,7 +180,7 @@ pub fn star_icon(
 ) -> egui::Response {
     use vstar_core::vartypes::StarLook;
     let size = if look == StarLook::Nova {
-        Vec2::new(68.0 * NOVA_SCALE, 30.0 * NOVA_SCALE)
+        Vec2::new(72.0 * NOVA_SCALE, 36.0 * NOVA_SCALE)
     } else if look == StarLook::Pulsator {
         Vec2::new(30.0, 28.0)
     } else {
@@ -251,7 +251,7 @@ pub fn star_icon(
             // Like the usual artist's picture: a red donor star on the left,
             // a stream of gas that narrows toward a flat, glowing disc around
             // the white dwarf at the lower right.
-            let donor_c = egui::pos2(rect.left() + 11.5 * K, c.y - 3.5 * K);
+            let donor_c = egui::pos2(rect.left() + 15.5 * K, c.y - 2.5 * K);
             let disc_c = egui::pos2(rect.right() - 17.0 * K, c.y + 6.5 * K);
             let donor_col = Color32::from_rgb(235, 80, 30);
             let stream_hot = Color32::from_rgb(255, 215, 90);
@@ -259,8 +259,8 @@ pub fn star_icon(
             // The stream: a tapered strip fading from yellow to blue.
             let mut mesh = egui::Mesh::default();
             let ends = [
-                (donor_c + Vec2::new(3.0 * K, -10.0 * K), stream_hot),
-                (donor_c + Vec2::new(3.0 * K, 10.0 * K), stream_hot),
+                (donor_c + Vec2::new(5.0 * K, -13.0 * K), stream_hot),
+                (donor_c + Vec2::new(5.0 * K, 13.0 * K), stream_hot),
                 (disc_c + Vec2::new(-6.0 * K, -7.5 * K), stream_cool),
                 (disc_c + Vec2::new(-2.0 * K, -2.0 * K), stream_cool),
             ];
@@ -302,7 +302,7 @@ pub fn star_icon(
                 Stroke::new(1.0, Color32::from_rgba_unmultiplied(150, 200, 255, 150)),
             );
             // The donor star, over the start of the stream.
-            star(donor_c, 10.5 * K, donor_col);
+            star(donor_c, 15.0 * K, donor_col);
         }
     }
     response
