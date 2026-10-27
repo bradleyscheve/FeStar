@@ -137,3 +137,105 @@ pub fn icon(ui: &mut egui::Ui, icon: Icon) {
         }
     }
 }
+
+/// A small star picture for the info card: coloured by spectral type, drawn
+/// as a pair for binaries and as a star inside a disc for novae.
+pub fn star_icon(
+    ui: &mut egui::Ui,
+    look: vstar_core::vartypes::StarLook,
+    rgb: Option<[u8; 3]>,
+) -> egui::Response {
+    use vstar_core::vartypes::StarLook;
+    let size = Vec2::new(26.0, 20.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    let base = rgb.map_or(Color32::from_gray(170), |[r, g, b]| {
+        Color32::from_rgb(r, g, b)
+    });
+    let rim = if ui.visuals().dark_mode {
+        Color32::from_black_alpha(160)
+    } else {
+        Color32::from_gray(90)
+    };
+    let outline = Stroke::new(1.0, rim);
+    let c = rect.center();
+    let star = |center: egui::Pos2, radius: f32, color: Color32| {
+        painter.circle_filled(center, radius, color);
+        painter.circle_stroke(center, radius, outline);
+        // A small highlight so the disc reads as a glowing star.
+        painter.circle_filled(
+            center + Vec2::new(-radius * 0.3, -radius * 0.3),
+            radius * 0.3,
+            color.lerp_to_gamma(Color32::WHITE, 0.6),
+        );
+    };
+    match look {
+        StarLook::Single => star(c, 8.0, base),
+        StarLook::Binary => {
+            // A faint orbit with a big and a small star on it.
+            let orbit: Vec<egui::Pos2> = (0..32)
+                .map(|i| {
+                    let a = i as f32 / 32.0 * std::f32::consts::TAU;
+                    c + Vec2::new(a.cos() * 11.0, a.sin() * 5.0)
+                })
+                .collect();
+            painter.add(egui::Shape::closed_line(
+                orbit,
+                Stroke::new(0.8, ui.visuals().text_color().gamma_multiply(0.4)),
+            ));
+            let companion = base.lerp_to_gamma(Color32::from_rgb(255, 140, 60), 0.6);
+            star(c + Vec2::new(5.5, 0.0), 4.0, companion);
+            star(c + Vec2::new(-5.0, 0.0), 6.5, base);
+        }
+        StarLook::Nova => {
+            // Accretion disc: a tilted, flattened ring around the star, with
+            // the half in front of the star drawn over it.
+            let tilt = -0.35_f32;
+            let (sin_t, cos_t) = tilt.sin_cos();
+            let ring = |rx: f32, ry: f32, from: f32, to: f32| -> Vec<egui::Pos2> {
+                (0..=24)
+                    .map(|i| {
+                        let a = from + (to - from) * i as f32 / 24.0;
+                        let (x, y) = (a.cos() * rx, a.sin() * ry);
+                        c + Vec2::new(x * cos_t - y * sin_t, x * sin_t + y * cos_t)
+                    })
+                    .collect()
+            };
+            let disc = Color32::from_rgb(255, 150, 50);
+            let tau = std::f32::consts::TAU;
+            // Back half of the disc (behind the star).
+            painter.add(egui::Shape::line(
+                ring(12.0, 4.0, std::f32::consts::PI, tau),
+                Stroke::new(3.0, disc.gamma_multiply(0.8)),
+            ));
+            star(c, 6.0, base);
+            // Front half of the disc (in front of the star).
+            painter.add(egui::Shape::line(
+                ring(12.0, 4.0, 0.0, std::f32::consts::PI),
+                Stroke::new(3.0, disc),
+            ));
+        }
+    }
+    response
+}
+
+/// A sliding on/off switch with a label on its left (for right-to-left
+/// layouts the label reads first).
+pub fn switch(ui: &mut egui::Ui, on: &mut bool, label: &str) -> egui::Response {
+    let size = Vec2::new(34.0, 18.0);
+    let (rect, mut response) = ui.allocate_exact_size(size, egui::Sense::click());
+    if response.clicked() {
+        *on = !*on;
+        response.mark_changed();
+    }
+    let t = ui.ctx().animate_bool_responsive(response.id, *on);
+    let off = ui.visuals().widgets.inactive.bg_fill;
+    let track = off.lerp_to_gamma(ACCENT, t);
+    let r = rect.height() / 2.0;
+    ui.painter().rect_filled(rect, r, track);
+    let x = egui::lerp((rect.left() + r)..=(rect.right() - r), t);
+    ui.painter()
+        .circle_filled(egui::pos2(x, rect.center().y), r - 2.5, Color32::WHITE);
+    ui.label(label);
+    response.on_hover_text("Switch between dark and light mode")
+}

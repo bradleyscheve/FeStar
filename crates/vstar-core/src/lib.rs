@@ -15,6 +15,7 @@ pub mod model;
 pub mod secrets;
 pub mod sources;
 pub mod time;
+pub mod vartypes;
 
 pub use error::{Error, Result};
 pub use model::{Dataset, Observation, StarInfo, StarQuery, Validation};

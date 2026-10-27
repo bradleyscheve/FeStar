@@ -25,6 +25,8 @@ const fn band(short_name: &'static str, description: &'static str, rgb: [u8; 3])
 pub const VISUAL: &str = "Vis.";
 pub const UNKNOWN: &str = "N/A";
 pub const GAIA_G: &str = "GG";
+pub const GAIA_BP: &str = "GBP";
+pub const GAIA_RP: &str = "GRP";
 
 pub static BANDS: &[BandInfo] = &[
     BandInfo {
@@ -73,6 +75,8 @@ pub static BANDS: &[BandInfo] = &[
     band("CV", "Unfiltered with V Zeropoint", [0, 192, 0]),
     band("CR", "Unfiltered with R Zeropoint", [192, 0, 0]),
     band(GAIA_G, "GAIA G", [255, 165, 0]),
+    band(GAIA_BP, "GAIA BP", [0, 128, 255]),
+    band(GAIA_RP, "GAIA RP", [220, 40, 40]),
 ];
 
 /// Look up a band by its short name (case-sensitive, as in the AID).

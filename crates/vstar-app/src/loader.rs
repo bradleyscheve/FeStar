@@ -5,11 +5,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
 use vstar_core::http::ReqwestClient;
-use vstar_core::sources::{aavso, csv_import};
+use vstar_core::sources::{aavso, csv_import, gaia};
 use vstar_core::{Dataset, Result, StarQuery};
 
 pub enum Request {
     Aavso(StarQuery),
+    Gaia(String),
     File { path: PathBuf, source_label: String },
 }
 
@@ -30,6 +31,7 @@ impl Job {
         let loaded = Arc::new(AtomicUsize::new(0));
         let description = match &request {
             Request::Aavso(q) => format!("Loading {} from AAVSO…", q.name),
+            Request::Gaia(name) => format!("Loading {name} from the Gaia archive…"),
             Request::File { path, .. } => {
                 format!(
                     "Reading {}…",
@@ -38,7 +40,7 @@ impl Job {
             }
         };
 
-        let from_database = matches!(request, Request::Aavso(_));
+        let from_database = matches!(request, Request::Aavso(_) | Request::Gaia(_));
         let (cancel2, loaded2) = (cancel.clone(), loaded.clone());
         std::thread::spawn(move || {
             let result = match request {
@@ -50,6 +52,9 @@ impl Job {
                     };
                     aavso::load(&http, &query, &progress)
                 }),
+                Request::Gaia(name) => {
+                    ReqwestClient::new().and_then(|http| gaia::load(&http, &name))
+                }
                 Request::File { path, source_label } => csv_import::load_file(&path, &source_label),
             };
             let _ = tx.send(result);

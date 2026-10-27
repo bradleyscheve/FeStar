@@ -32,7 +32,7 @@ impl SourceKind {
             SourceKind::Aavso => "AAVSO International Database",
             SourceKind::BaaFile => "BAA VSS database (downloaded file)",
             SourceKind::OtherFile => "Other file (CSV, text)",
-            SourceKind::Gaia => "Gaia DR3 (coming in step 3)",
+            SourceKind::Gaia => "Gaia DR3 epoch photometry",
         }
     }
 }
@@ -262,7 +262,16 @@ impl VStarApp {
                     source_label: source_label.into(),
                 }
             }
-            SourceKind::Gaia => return,
+            SourceKind::Gaia => {
+                let name = self.settings.star_name.trim().to_string();
+                if name.is_empty() {
+                    self.status = Status::Error(
+                        "Type a star name (e.g. SS Cyg) or a Gaia DR3 source id first.".into(),
+                    );
+                    return;
+                }
+                Request::Gaia(name)
+            }
         };
         self.job = Some(Job::start(request, ctx.clone()));
     }
@@ -382,15 +391,6 @@ impl VStarApp {
                     self.reset_view = true;
                     ui.close();
                 }
-                ui.separator();
-                ui.label("Theme");
-                for (choice, label) in
-                    [(ThemeChoice::System, "Follow Windows"), (ThemeChoice::Dark, "Dark"), (ThemeChoice::Light, "Light")]
-                {
-                    if ui.radio_value(&mut self.settings.theme, choice, label).clicked() {
-                        apply_theme(ui.ctx(), choice);
-                    }
-                }
             });
             ui.menu_button("Help", |ui| {
                 ui.hyperlink_to("VStar user manual", "https://aavso.github.io/VStar/docs/vstar/release/user_manual/VStarUserManual.pdf");
@@ -399,6 +399,13 @@ impl VStarApp {
                 ui.separator();
                 ui.label(format!("VStar-RS {}", env!("CARGO_PKG_VERSION")));
                 ui.label("Based on AAVSO VStar. AGPL-3.0 licence.");
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let mut dark = ui.visuals().dark_mode;
+                if theme::switch(ui, &mut dark, "Dark mode").changed() {
+                    self.settings.theme = if dark { ThemeChoice::Dark } else { ThemeChoice::Light };
+                    apply_theme(ui.ctx(), self.settings.theme);
+                }
             });
         });
     }
@@ -417,10 +424,9 @@ impl VStarApp {
                 .width(ui.available_width())
                 .selected_text(self.settings.source.label())
                 .show_ui(ui, |ui| {
-                    for kind in [SourceKind::Aavso, SourceKind::BaaFile, SourceKind::OtherFile] {
+                    for kind in [SourceKind::Aavso, SourceKind::Gaia, SourceKind::BaaFile, SourceKind::OtherFile] {
                         ui.selectable_value(&mut self.settings.source, kind, kind.label());
                     }
-                    ui.add_enabled(false, egui::Button::selectable(false, SourceKind::Gaia.label()));
                 });
 
             match self.settings.source {
@@ -499,7 +505,26 @@ impl VStarApp {
                         self.start_load(ui.ctx());
                     }
                 }
-                SourceKind::Gaia => {}
+                SourceKind::Gaia => {
+                    let edit = ui.add(
+                        egui::TextEdit::singleline(&mut self.settings.star_name)
+                            .hint_text("Star name or Gaia DR3 source id")
+                            .desired_width(f32::INFINITY),
+                    );
+                    let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    ui.label(
+                        RichText::new(
+                            "Finds the star by its VSX position, then loads Gaia's own G, BP and RP \
+                             measurements. Only stars Gaia flagged as variable have them.",
+                        )
+                        .weak(),
+                    );
+                    let load = ui.add_enabled(!busy, egui::Button::new("Load Gaia photometry").min_size([ui.available_width(), 30.0].into()));
+                    if (load.clicked() || enter) && !busy {
+                        self.start_load(ui.ctx());
+                    }
+                    ui.hyperlink_to("Gaia bulk data files ↗", "https://cdn.gea.esac.esa.int/Gaia/");
+                }
             }
         });
 
@@ -507,19 +532,36 @@ impl VStarApp {
         ui.add_space(8.0);
         theme::card(ui).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(
-                RichText::new(if ds.star.name.is_empty() {
-                    "Unnamed star"
-                } else {
-                    &ds.star.name
-                })
-                .strong()
-                .size(16.0),
-            );
+            ui.horizontal(|ui| {
+                let look = vstar_core::vartypes::star_look(ds.star.var_type.as_deref());
+                let color = vstar_core::vartypes::spectral_color(ds.star.spectral_type.as_deref());
+                let tip = match (&ds.star.spectral_type, look) {
+                    (Some(s), _) => format!("Colour from spectral type {s}"),
+                    (None, _) => "Spectral type unknown".to_string(),
+                };
+                theme::star_icon(ui, look, color).on_hover_text(tip);
+                ui.label(
+                    RichText::new(if ds.star.name.is_empty() {
+                        "Unnamed star"
+                    } else {
+                        &ds.star.name
+                    })
+                    .strong()
+                    .size(16.0),
+                );
+            });
             egui::Grid::new("star_info")
                 .num_columns(2)
                 .spacing([12.0, 4.0])
                 .show(ui, |ui| {
+                    if let Some(t) = &ds.star.var_type {
+                        ui.label(RichText::new("Type").weak());
+                        ui.label(t.as_str()).on_hover_ui(|ui| {
+                            ui.set_max_width(360.0);
+                            ui.label(vstar_core::vartypes::explain(t));
+                        });
+                        ui.end_row();
+                    }
                     let mut row = |k: &str, v: Option<String>| {
                         if let Some(v) = v {
                             ui.label(RichText::new(k).weak());
@@ -527,7 +569,6 @@ impl VStarApp {
                             ui.end_row();
                         }
                     };
-                    row("Type", ds.star.var_type.clone());
                     row("Period", ds.star.period_days.map(|p| format!("{p} d")));
                     row("Epoch", ds.star.epoch_jd.map(|e| format!("JD {e}")));
                     row("Spectrum", ds.star.spectral_type.clone());
