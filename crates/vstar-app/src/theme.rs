@@ -3,6 +3,8 @@
 
 use egui::{Color32, CornerRadius, Margin, Stroke, Theme, Vec2};
 
+/// The colour of a fitted model drawn over the data.
+pub const MODEL: Color32 = Color32::from_rgb(0xff, 0xb0, 0x3a);
 pub const ACCENT: Color32 = Color32::from_rgb(0x9a, 0x9a, 0x9a);
 
 pub fn install(ctx: &egui::Context) {

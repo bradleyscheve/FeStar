@@ -32,6 +32,8 @@ pub struct Options<'a> {
     pub show_fainter_than: bool,
     pub show_errors: bool,
     pub reset_view: bool,
+    /// A model curve to draw over the observations (time plots only).
+    pub overlay: Option<&'a [[f64; 2]]>,
 }
 
 /// One plotted series and which observation each point came from, so the
@@ -198,6 +200,13 @@ pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
     if opts.reset_view {
         plot = plot.reset();
     }
+    let overlay = if phase_mode { None } else { opts.overlay };
+    if overlay.is_some() {
+        // Keep the residual plot below in step with this one.
+        plot = plot
+            .link_axis(egui::Id::unique("model_x"), [true, false])
+            .link_cursor(egui::Id::unique("model_x"), [true, false]);
+    }
 
     if let Mode::Phase { two_cycles, .. } = opts.mode {
         plot = plot
@@ -217,6 +226,14 @@ pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
         }
         for p in points {
             plot_ui.points(p);
+        }
+        if let Some(curve) = overlay {
+            plot_ui.line(
+                Line::new("Model", PlotPoints::new(curve.to_vec()))
+                    .color(theme::MODEL)
+                    .width(1.8)
+                    .allow_hover(false),
+            );
         }
     });
 }

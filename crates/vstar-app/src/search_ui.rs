@@ -20,6 +20,8 @@ pub enum SearchMode {
     Standard,
     /// A range of periods typed in by the user.
     PeriodRange,
+    /// A range of frequencies and a step, typed in by the user.
+    FrequencyRange,
 }
 
 pub struct SearchResult {
@@ -38,6 +40,9 @@ pub struct SearchState {
     min_text: String,
     max_text: String,
     oversample_text: String,
+    freq_min_text: String,
+    freq_max_text: String,
+    freq_step_text: String,
     task: Option<Task<(SearchResult, Option<RangeText>)>>,
     pub result: Option<SearchResult>,
     show_period_axis: bool,
@@ -60,6 +65,9 @@ impl Default for SearchState {
             min_text: String::new(),
             max_text: String::new(),
             oversample_text: "10".into(),
+            freq_min_text: String::new(),
+            freq_max_text: String::new(),
+            freq_step_text: String::new(),
             task: None,
             result: None,
             show_period_axis: true,
@@ -119,13 +127,17 @@ fn run_scan(
 }
 
 impl VStarApp {
-    pub(crate) fn open_search_dialog(&mut self) {
+    pub(crate) fn open_search_dialog(&mut self, mode: SearchMode) {
         let ts = self.analysis_series();
         let s = &mut self.search;
+        s.mode = mode;
         if s.min_text.is_empty() && ts.len() >= 4 {
             let std = Params::standard(&ts);
             s.min_text = format!("{:.4}", (1.0 / std.hi_freq).max(0.02));
             s.max_text = format!("{:.2}", ts.span().max(1.0));
+            s.freq_min_text = format!("{:.6}", std.lo_freq);
+            s.freq_max_text = format!("{:.6}", std.hi_freq);
+            s.freq_step_text = format!("{:.6}", std.resolution);
         }
         s.error = None;
         s.dialog_open = true;
@@ -205,6 +217,26 @@ impl VStarApp {
 
         let params = match self.search.mode {
             SearchMode::Standard => Ok(Params::standard(&ts)),
+            SearchMode::FrequencyRange => {
+                let num = |t: &str, what: &str| {
+                    t.trim()
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|v| v.is_finite() && *v >= 0.0)
+                        .ok_or_else(|| format!("{what} must be a number, zero or more."))
+                };
+                num(&self.search.freq_min_text, "The lowest frequency").and_then(|lo| {
+                    let hi = num(&self.search.freq_max_text, "The highest frequency")?;
+                    let step = num(&self.search.freq_step_text, "The frequency step")?;
+                    Params {
+                        lo_freq: lo,
+                        hi_freq: hi,
+                        resolution: step,
+                    }
+                    .validated()
+                    .map_err(|e| e.to_string())
+                })
+            }
             SearchMode::PeriodRange => {
                 let num = |t: &str, what: &str| {
                     t.trim()
@@ -225,6 +257,7 @@ impl VStarApp {
                 let label = match self.search.mode {
                     SearchMode::Standard => "Standard scan: ",
                     SearchMode::PeriodRange => "Period range: ",
+                    SearchMode::FrequencyRange => "Frequency range: ",
                 };
                 self.search.task = Some(Task::spawn(ctx, "Searching for periods", move |h| {
                     Ok((run_scan(&ts, params, label.to_string(), h, 0.0)?, None))
@@ -261,6 +294,21 @@ impl VStarApp {
 
                 ui.radio_value(&mut s.mode, SearchMode::Standard, "Standard scan (VStar's default)");
                 ui.radio_value(&mut s.mode, SearchMode::PeriodRange, "Period range");
+                ui.radio_value(&mut s.mode, SearchMode::FrequencyRange, "Frequency range");
+                if s.mode == SearchMode::FrequencyRange {
+                    egui::Grid::new("freq_range").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
+                        ui.label("Lowest frequency (cycles/day)");
+                        ui.add(egui::TextEdit::singleline(&mut s.freq_min_text).desired_width(120.0));
+                        ui.end_row();
+                        ui.label("Highest frequency (cycles/day)");
+                        ui.add(egui::TextEdit::singleline(&mut s.freq_max_text).desired_width(120.0));
+                        ui.end_row();
+                        ui.label("Frequency step");
+                        ui.add(egui::TextEdit::singleline(&mut s.freq_step_text).desired_width(120.0))
+                            .on_hover_text("Smaller steps trace peaks more smoothly but take longer.");
+                        ui.end_row();
+                    });
+                }
                 if s.mode == SearchMode::PeriodRange {
                     egui::Grid::new("range").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
                         ui.label("Shortest period (days)");

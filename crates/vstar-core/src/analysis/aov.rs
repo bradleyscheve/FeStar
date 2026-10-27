@@ -68,13 +68,19 @@ pub struct Periodogram {
 }
 
 impl Periodogram {
-    /// The best periods, largest F statistic first.
+    /// The best periods, largest F statistic first. Only peaks of the
+    /// periodogram count (VStar lists the highest individual points, which
+    /// are usually just neighbours on the same peak).
     pub fn top_hits(&self, n: usize) -> Vec<Point> {
-        let mut v: Vec<Point> = self
-            .points
-            .iter()
-            .copied()
-            .filter(|p| p.f_statistic.is_finite())
+        let p = &self.points;
+        let f = |i: usize| p[i].f_statistic;
+        let mut v: Vec<Point> = (0..p.len())
+            .filter(|&i| {
+                f(i).is_finite()
+                    && (i == 0 || f(i - 1) < f(i) || f(i - 1).is_nan())
+                    && (i + 1 == p.len() || f(i) >= f(i + 1) || f(i + 1).is_nan())
+            })
+            .map(|i| p[i])
             .collect();
         v.sort_by(|a, b| b.f_statistic.total_cmp(&a.f_statistic));
         v.truncate(n);

@@ -23,6 +23,8 @@ pub struct PhaseState {
     pub two_cycles: bool,
     /// The period and epoch currently plotted.
     pub active: Option<(f64, f64)>,
+    /// Every (period, epoch) plotted for this star, oldest first.
+    pub history: Vec<(f64, f64)>,
     ai: Option<Task<AiPhaseResult>>,
     ai_note: Option<String>,
     error: Option<String>,
@@ -36,6 +38,7 @@ impl Default for PhaseState {
             epoch_text: String::new(),
             two_cycles: true,
             active: None,
+            history: Vec::new(),
             ai: None,
             ai_note: None,
             error: None,
@@ -50,6 +53,15 @@ struct AiPhaseResult {
 }
 
 impl PhaseState {
+    /// Add the active plot to the history unless it is already the latest.
+    pub fn remember(&mut self) {
+        if let Some(a) = self.active
+            && self.history.last() != Some(&a)
+        {
+            self.history.push(a);
+        }
+    }
+
     pub fn task(&self) -> Option<(&str, f32)> {
         self.ai
             .as_ref()
@@ -106,6 +118,7 @@ impl VStarApp {
             self.phase.period_text = period.to_string();
             self.phase.epoch_text = format!("{epoch:.4}");
             self.phase.active = Some((period, epoch));
+            self.phase.remember();
             self.tab = Tab::PhasePlot;
             self.reset_view = true;
         }
@@ -323,6 +336,7 @@ impl VStarApp {
             match parsed {
                 Ok(pe) => {
                     self.phase.active = Some(pe);
+                    self.phase.remember();
                     self.phase.error = None;
                     self.tab = Tab::PhasePlot;
                     self.reset_view = true;

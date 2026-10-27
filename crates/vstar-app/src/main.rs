@@ -9,6 +9,7 @@ mod prefs;
 mod search_ui;
 mod task;
 mod theme;
+mod tools_ui;
 mod vsp_ui;
 
 fn main() -> eframe::Result {

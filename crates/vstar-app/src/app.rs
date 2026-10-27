@@ -10,7 +10,8 @@ use vstar_core::{Dataset, Observation, StarQuery, Validation, bands, time};
 use crate::loader::{Job, Request};
 use crate::phase_ui::PhaseState;
 use crate::prefs::{PrefsState, Secrets};
-use crate::search_ui::SearchState;
+use crate::search_ui::{SearchMode, SearchState};
+use crate::tools_ui::{Tool, ToolsState};
 use crate::vsp_ui::VspState;
 use crate::{light_curve, theme};
 
@@ -43,6 +44,10 @@ pub enum Tab {
     LightCurve,
     PhasePlot,
     PeriodSearch,
+    /// The latest AoV, DFT or WWZ result.
+    Tool,
+    /// A fitted model and its residuals.
+    Model,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,6 +134,7 @@ pub struct VStarApp {
     pub(crate) search: SearchState,
     pub(crate) prefs: PrefsState,
     vsp: VspState,
+    pub(crate) tools: ToolsState,
     secrets: Secrets,
 }
 
@@ -166,6 +172,7 @@ impl VStarApp {
             search: SearchState::default(),
             prefs: PrefsState::default(),
             vsp: VspState::default(),
+            tools: ToolsState::default(),
             secrets: Secrets::new(),
         }
     }
@@ -278,6 +285,7 @@ impl VStarApp {
                 self.reset_view = true;
                 self.phase.reset();
                 self.search.reset();
+                self.tools.reset();
                 self.tab = Tab::LightCurve;
             }
             Err(vstar_core::Error::Cancelled) => {
@@ -307,22 +315,64 @@ impl VStarApp {
             ui.menu_button("Analysis", |ui| {
                 let has_data = self.dataset.is_some();
                 let tip = "Load a star first";
-                if ui
-                    .add_enabled(has_data, egui::Button::new("Phase plot…"))
-                    .on_disabled_hover_text(tip)
-                    .clicked()
-                {
+                let item = |ui: &mut egui::Ui, label: &str, enabled: bool| -> bool {
+                    let clicked = ui
+                        .add_enabled(has_data && enabled, egui::Button::new(label))
+                        .on_disabled_hover_text(tip)
+                        .clicked();
+                    if clicked {
+                        ui.close();
+                    }
+                    clicked
+                };
+                if item(ui, "Phase plot…", true) {
                     self.open_phase_dialog();
-                    ui.close();
                 }
-                if ui
-                    .add_enabled(has_data, egui::Button::new("DC DFT period search…"))
-                    .on_disabled_hover_text(tip)
-                    .clicked()
-                {
-                    self.open_search_dialog();
-                    ui.close();
+                if item(ui, "Previous phase plots…", true) {
+                    self.tools.phase_history_dialog = true;
                 }
+                if item(ui, "Models…", true) {
+                    self.tools.models_dialog = true;
+                }
+                ui.separator();
+                if item(ui, "DC DFT standard scan…", true) {
+                    self.open_search_dialog(SearchMode::Standard);
+                }
+                if item(ui, "DC DFT with frequency range…", true) {
+                    self.open_search_dialog(SearchMode::FrequencyRange);
+                }
+                if item(ui, "DC DFT with period range…", true) {
+                    self.open_search_dialog(SearchMode::PeriodRange);
+                }
+                ui.separator();
+                if item(ui, "WWZ with frequency range…", true) {
+                    self.open_tool(Tool::WwzFrequency);
+                }
+                if item(ui, "WWZ with period range…", true) {
+                    self.open_tool(Tool::WwzPeriod);
+                }
+                ui.separator();
+                if item(ui, "AoV with period range…", true) {
+                    self.open_tool(Tool::Aov);
+                }
+                if item(ui, "DFT and spectral window frequency range…", true) {
+                    self.open_tool(Tool::Dft);
+                }
+                ui.separator();
+                if item(ui, "Polynomial fit…", true) {
+                    self.open_tool(Tool::Polynomial);
+                }
+                if item(ui, "Loess fit…", true) {
+                    self.open_tool(Tool::Loess);
+                }
+                if item(ui, "Fourier model…", true) {
+                    self.open_tool(Tool::Fourier);
+                }
+                if item(ui, "Piecewise linear model from means…", true) {
+                    self.open_tool(Tool::Piecewise);
+                }
+                ui.add_enabled(false, egui::Button::new("VeLa model…"))
+                    .on_disabled_hover_text("VStar's VeLa scripting language isn't in VStar-RS yet.");
             });
             ui.menu_button("View", |ui| {
                 if ui.button("Reset zoom").clicked() {
@@ -563,6 +613,13 @@ impl VStarApp {
             if self.search.result.is_some() {
                 ui.selectable_value(&mut self.tab, Tab::PeriodSearch, "Period search");
             }
+            if self.tools.has_result() {
+                let title = self.tools.tab_title().to_string();
+                ui.selectable_value(&mut self.tab, Tab::Tool, title);
+            }
+            if self.tools.active_model().is_some() {
+                ui.selectable_value(&mut self.tab, Tab::Model, "Model");
+            }
             if let (Tab::PhasePlot, Some((period, epoch))) = (self.tab, self.phase.active) {
                 ui.separator();
                 ui.label(RichText::new(format!("Period {period} d, epoch JD {epoch:.4}")).weak());
@@ -573,7 +630,7 @@ impl VStarApp {
         });
     }
 
-    fn show_plot(&mut self, ui: &mut egui::Ui, mode: light_curve::Mode) {
+    pub(crate) fn show_plot(&mut self, ui: &mut egui::Ui, mode: light_curve::Mode) {
         let Some(ds) = &self.dataset else { return };
         let opts = light_curve::Options {
             mode,
@@ -582,6 +639,10 @@ impl VStarApp {
             show_fainter_than: self.settings.show_fainter_than,
             show_errors: self.settings.show_errors,
             reset_view: std::mem::take(&mut self.reset_view),
+            overlay: match mode {
+                light_curve::Mode::Time => self.tools.active_model().map(|m| &m.curve[..]),
+                light_curve::Mode::Phase { .. } => None,
+            },
         };
         light_curve::show(ui, ds, &opts);
     }
@@ -601,7 +662,11 @@ impl VStarApp {
                 }
                 return;
             }
-            let analysis = self.search.running().or_else(|| self.phase.task());
+            let analysis = self
+                .search
+                .running()
+                .or_else(|| self.phase.task())
+                .or_else(|| self.tools.running());
             if let Some((description, progress)) = analysis {
                 ui.spinner();
                 ui.label(description);
@@ -609,6 +674,7 @@ impl VStarApp {
                 if ui.small_button("Cancel").clicked() {
                     self.search.cancel();
                     self.phase.cancel();
+                    self.tools.cancel();
                 }
                 return;
             }
@@ -627,7 +693,10 @@ impl eframe::App for VStarApp {
         self.poll_search();
         self.poll_phase_ai();
         let ctx = ui.ctx().clone();
+        self.poll_tools(&ctx);
         self.vsp.show(&ctx);
+        self.show_tool_dialog(&ctx);
+        self.show_history_dialogs(&ctx);
         self.show_phase_dialog(&ctx);
         self.show_search_dialog(&ctx);
         self.prefs.show(&ctx, &mut self.settings.ai, &self.secrets);
@@ -673,6 +742,8 @@ impl eframe::App for VStarApp {
                     None => self.tab = Tab::LightCurve,
                 },
                 Tab::PeriodSearch => self.show_search_results(ui),
+                Tab::Tool => self.show_tool_results(ui),
+                Tab::Model => self.show_model_tab(ui),
             }
         });
     }
