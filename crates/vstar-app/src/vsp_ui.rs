@@ -110,10 +110,11 @@ impl VspState {
                     ui.hyperlink_to("Open in VSP on the web ↗", &chart.page_url);
                 }
                 if let Some(tex) = &self.texture {
-                    egui::ScrollArea::both().show(ui, |ui| {
-                        let avail = ui.available_width().max(200.0);
-                        let size = tex.size_vec2();
-                        let scale = (avail / size.x).min(1.0);
+                    // Fit the whole chart in the window, keeping its shape.
+                    let avail = ui.available_size().max(egui::vec2(100.0, 100.0));
+                    let size = tex.size_vec2();
+                    let scale = (avail.x / size.x).min(avail.y / size.y);
+                    ui.centered_and_justified(|ui| {
                         ui.image((tex.id(), size * scale));
                     });
                 }
