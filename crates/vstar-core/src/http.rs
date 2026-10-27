@@ -43,7 +43,7 @@ pub struct ReqwestClient {
 impl ReqwestClient {
     pub fn new() -> Result<Self> {
         let inner = reqwest::blocking::Client::builder()
-            .user_agent(concat!("VStar-RS/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("FeStar/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(120))
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;

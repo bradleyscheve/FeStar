@@ -30,5 +30,5 @@ jobs:
       - name: Upload the Windows app
         uses: actions/upload-artifact@v4
         with:
-          name: vstar-rs-windows
-          path: target/release/vstar-rs.exe
+          name: festar-windows
+          path: target/release/festar.exe

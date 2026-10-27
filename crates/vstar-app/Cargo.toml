@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "vstar-rs"
+name = "festar"
 path = "src/main.rs"
 
 [dependencies]

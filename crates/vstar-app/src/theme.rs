@@ -146,7 +146,11 @@ pub fn star_icon(
     rgb: Option<[u8; 3]>,
 ) -> egui::Response {
     use vstar_core::vartypes::StarLook;
-    let size = Vec2::new(26.0, 20.0);
+    let size = if look == StarLook::Nova {
+        Vec2::new(68.0, 30.0)
+    } else {
+        Vec2::new(40.0, 22.0)
+    };
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
     let base = rgb.map_or(Color32::from_gray(170), |[r, g, b]| {
@@ -188,32 +192,54 @@ pub fn star_icon(
             star(c + Vec2::new(-5.0, 0.0), 6.5, base);
         }
         StarLook::Nova => {
-            // Accretion disc: a tilted, flattened ring around the star, with
-            // the half in front of the star drawn over it.
-            let tilt = -0.35_f32;
-            let (sin_t, cos_t) = tilt.sin_cos();
-            let ring = |rx: f32, ry: f32, from: f32, to: f32| -> Vec<egui::Pos2> {
-                (0..=24)
+            // Like the usual artist's picture: a red donor star on the left,
+            // a stream of gas that narrows toward a flat, glowing disc around
+            // the white dwarf at the lower right.
+            let donor_c = egui::pos2(rect.left() + 11.5, c.y - 3.5);
+            let disc_c = egui::pos2(rect.right() - 17.0, c.y + 6.5);
+            let donor_col = Color32::from_rgb(235, 80, 30);
+            let stream_hot = Color32::from_rgb(255, 215, 90);
+            let stream_cool = Color32::from_rgb(160, 185, 255);
+            // The stream: a tapered strip fading from yellow to blue.
+            let mut mesh = egui::Mesh::default();
+            let ends = [
+                (donor_c + Vec2::new(3.0, -10.0), stream_hot),
+                (donor_c + Vec2::new(3.0, 10.0), stream_hot),
+                (disc_c + Vec2::new(-6.0, -7.5), stream_cool),
+                (disc_c + Vec2::new(-2.0, -2.0), stream_cool),
+            ];
+            for (pos, color) in ends {
+                mesh.colored_vertex(pos, color);
+            }
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(1, 3, 2);
+            painter.add(egui::Shape::mesh(mesh));
+            // The disc: a flattened ring, bluish white, brighter in the middle.
+            let ellipse = |rx: f32, ry: f32| -> Vec<egui::Pos2> {
+                (0..32)
                     .map(|i| {
-                        let a = from + (to - from) * i as f32 / 24.0;
-                        let (x, y) = (a.cos() * rx, a.sin() * ry);
-                        c + Vec2::new(x * cos_t - y * sin_t, x * sin_t + y * cos_t)
+                        let a = i as f32 / 32.0 * std::f32::consts::TAU;
+                        disc_c + Vec2::new(a.cos() * rx, a.sin() * ry)
                     })
                     .collect()
             };
-            let disc = Color32::from_rgb(255, 150, 50);
-            let tau = std::f32::consts::TAU;
-            // Back half of the disc (behind the star).
-            painter.add(egui::Shape::line(
-                ring(12.0, 4.0, std::f32::consts::PI, tau),
-                Stroke::new(3.0, disc.gamma_multiply(0.8)),
+            painter.add(egui::Shape::convex_polygon(
+                ellipse(16.0, 7.5),
+                Color32::from_rgb(110, 145, 205),
+                Stroke::new(0.8, rim.gamma_multiply(0.7)),
             ));
-            star(c, 6.0, base);
-            // Front half of the disc (in front of the star).
-            painter.add(egui::Shape::line(
-                ring(12.0, 4.0, 0.0, std::f32::consts::PI),
-                Stroke::new(3.0, disc),
+            painter.add(egui::Shape::convex_polygon(
+                ellipse(11.0, 5.2),
+                Color32::from_rgb(170, 200, 240),
+                Stroke::NONE,
             ));
+            painter.add(egui::Shape::convex_polygon(
+                ellipse(5.5, 2.6),
+                base.lerp_to_gamma(Color32::WHITE, 0.7),
+                Stroke::NONE,
+            ));
+            // The donor star, over the start of the stream.
+            star(donor_c, 10.5, donor_col);
         }
     }
     response

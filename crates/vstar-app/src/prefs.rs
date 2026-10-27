@@ -10,12 +10,15 @@ use vstar_core::secrets::{KeyringStore, MemoryStore, SecretStore};
 use crate::task::Task;
 use crate::theme;
 
-const KEYRING_SERVICE: &str = "VStar-RS";
+const KEYRING_SERVICE: &str = "FeStar";
+/// Keys saved before the rename are still found here.
+const LEGACY_KEYRING_SERVICE: &str = "VStar-RS";
 
 /// API keys live in the operating system's credential store. If it can't be
 /// used (some Linux setups), keys are kept in memory for this session only.
 pub struct Secrets {
     keyring: KeyringStore,
+    legacy: KeyringStore,
     memory: MemoryStore,
     session_only: AtomicBool,
 }
@@ -24,6 +27,7 @@ impl Secrets {
     pub fn new() -> Self {
         Self {
             keyring: KeyringStore::new(KEYRING_SERVICE),
+            legacy: KeyringStore::new(LEGACY_KEYRING_SERVICE),
             memory: MemoryStore::default(),
             session_only: AtomicBool::new(false),
         }
@@ -32,7 +36,10 @@ impl Secrets {
     pub fn key(&self, provider: Provider) -> Option<String> {
         match load_key(&self.keyring, provider) {
             Ok(Some(k)) => Some(k),
-            Ok(None) | Err(_) => load_key(&self.memory, provider).ok().flatten(),
+            Ok(None) | Err(_) => load_key(&self.legacy, provider)
+                .ok()
+                .flatten()
+                .or_else(|| load_key(&self.memory, provider).ok().flatten()),
         }
     }
 
@@ -53,6 +60,7 @@ impl Secrets {
 
     pub fn remove(&self, provider: Provider) {
         let _ = self.keyring.delete(provider.account());
+        let _ = self.legacy.delete(provider.account());
         let _ = self.memory.delete(provider.account());
     }
 
@@ -132,7 +140,7 @@ impl PrefsState {
     fn contents(&mut self, ui: &mut egui::Ui, config: &mut AiConfig, secrets: &Secrets) {
         ui.label(RichText::new("AI provider").strong().size(16.0));
         ui.label(
-            "VStar-RS can ask an AI model to choose period-search and phase-plot settings. \
+            "FeStar can ask an AI model to choose period-search and phase-plot settings. \
              Connect your own account by pasting an API key.",
         );
         ui.add_space(6.0);

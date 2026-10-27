@@ -15,7 +15,7 @@ mod vsp_ui;
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("VStar-RS")
+            .with_title("FeStar")
             .with_inner_size([1280.0, 800.0])
             .with_min_inner_size([800.0, 500.0]),
         // OpenGL is the fallback for machines whose graphics drivers don't
@@ -30,6 +30,7 @@ fn main() -> eframe::Result {
     // A file given on the command line (or via Windows "Open with") is loaded at startup.
     let open_file = std::env::args_os().nth(1).map(std::path::PathBuf::from);
     eframe::run_native(
+        // Kept as the old name so saved settings carry over after the rename.
         "VStar-RS",
         options,
         Box::new(|cc| Ok(Box::new(app::VStarApp::new(cc, open_file)))),

@@ -254,7 +254,7 @@ impl AiClient<'_> {
                         });
                         // Nous Portal rejects requests that don't say which product sent them.
                         if self.config.provider == Provider::NousPortal {
-                            body["tags"] = json!(["product=vstar-rs"]);
+                            body["tags"] = json!(["product=festar"]);
                         }
                         body
                     },

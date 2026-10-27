@@ -1,4 +1,4 @@
-//! Core data model and data sources for VStar-RS.
+//! Core data model and data sources for FeStar.
 //!
 //! This crate has no user-interface code, so it can be tested on its own and
 //! reused by the desktop app, command-line tools and future AI analysis.

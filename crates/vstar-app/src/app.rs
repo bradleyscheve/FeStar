@@ -125,8 +125,26 @@ fn default_ranges(now_jd: f64) -> [String; 4] {
     ]
 }
 
+/// Everything that belongs to one loaded star. The star being shown lives in
+/// `VStarApp`'s own fields; the others are parked here, so switching stars
+/// needs no reloading.
+#[derive(Default)]
+struct StarSlot {
+    dataset: Option<Dataset>,
+    hidden_bands: HashSet<String>,
+    reset_view: bool,
+    tab: Tab,
+    phase: PhaseState,
+    search: SearchState,
+    tools: ToolsState,
+}
+
 pub struct VStarApp {
     settings: Settings,
+    /// One entry per open star tab. The entry at `active` is stale while its
+    /// star is live in the fields below.
+    slots: Vec<StarSlot>,
+    active: usize,
     pub(crate) dataset: Option<Dataset>,
     pub(crate) hidden_bands: HashSet<String>,
     job: Option<Job>,
@@ -165,6 +183,8 @@ impl VStarApp {
         ] = default_ranges(time::now_jd());
         Self {
             settings,
+            slots: Vec::new(),
+            active: 0,
             dataset: None,
             hidden_bands: HashSet::new(),
             job,
@@ -276,6 +296,144 @@ impl VStarApp {
         self.job = Some(Job::start(request, ctx.clone()));
     }
 
+    /// Move the star being shown into its slot.
+    fn park_active(&mut self) {
+        let Some(dataset) = self.dataset.take() else {
+            return;
+        };
+        if let Some(slot) = self.slots.get_mut(self.active) {
+            *slot = StarSlot {
+                dataset: Some(dataset),
+                hidden_bands: std::mem::take(&mut self.hidden_bands),
+                reset_view: self.reset_view,
+                tab: self.tab,
+                phase: std::mem::take(&mut self.phase),
+                search: std::mem::take(&mut self.search),
+                tools: std::mem::take(&mut self.tools),
+            };
+        }
+    }
+
+    /// Make slot `i` the star being shown.
+    fn activate(&mut self, i: usize) {
+        if i >= self.slots.len() {
+            return;
+        }
+        if i != self.active || self.dataset.is_none() {
+            self.park_active();
+            let slot = std::mem::take(&mut self.slots[i]);
+            self.dataset = slot.dataset;
+            self.hidden_bands = slot.hidden_bands;
+            self.reset_view = slot.reset_view;
+            self.tab = slot.tab;
+            self.phase = slot.phase;
+            self.search = slot.search;
+            self.tools = slot.tools;
+            self.active = i;
+        }
+    }
+
+    /// Give a newly loaded star a tab and make it the star being shown. A
+    /// star that is already open is replaced by the fresh data.
+    fn open_star_tab(&mut self, ds: &Dataset) {
+        self.park_active();
+        let same = |slot: &StarSlot| {
+            slot.dataset
+                .as_ref()
+                .is_some_and(|d| d.star.name == ds.star.name && d.source == ds.source)
+        };
+        let i = match self.slots.iter().position(same) {
+            Some(i) => i,
+            None => {
+                self.slots.push(StarSlot::default());
+                self.slots.len() - 1
+            }
+        };
+        self.slots[i] = StarSlot::default();
+        self.active = i;
+        self.hidden_bands.clear();
+        self.phase.reset();
+        self.search.reset();
+        self.tools.reset();
+    }
+
+    fn close_star_tab(&mut self, i: usize) {
+        if i >= self.slots.len() {
+            return;
+        }
+        if i == self.active {
+            self.dataset = None;
+            self.hidden_bands.clear();
+            self.phase.reset();
+            self.search.reset();
+            self.tools.reset();
+            self.slots.remove(i);
+            if self.slots.is_empty() {
+                self.active = 0;
+            } else {
+                let next = i.min(self.slots.len() - 1);
+                self.active = next;
+                self.activate(next);
+            }
+        } else {
+            self.slots.remove(i);
+            if i < self.active {
+                self.active -= 1;
+            }
+        }
+    }
+
+    fn star_tab_label(&self, i: usize) -> String {
+        let ds = if i == self.active {
+            self.dataset.as_ref()
+        } else {
+            self.slots.get(i).and_then(|s| s.dataset.as_ref())
+        };
+        ds.map_or_else(
+            || "Star".to_string(),
+            |d| {
+                if d.star.name.is_empty() {
+                    "Unnamed star".to_string()
+                } else {
+                    d.star.name.clone()
+                }
+            },
+        )
+    }
+
+    /// The row of tabs, one per loaded star.
+    fn star_tabs(&mut self, ui: &mut egui::Ui) {
+        let mut switch_to = None;
+        let mut close = None;
+        egui::ScrollArea::horizontal()
+            .id_salt("star_tabs")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for i in 0..self.slots.len() {
+                        let selected = i == self.active;
+                        let label = self.star_tab_label(i);
+                        let text = RichText::new(label).strong();
+                        if ui.selectable_label(selected, text).clicked() && !selected {
+                            switch_to = Some(i);
+                        }
+                        if ui
+                            .small_button("×")
+                            .on_hover_text("Close this star")
+                            .clicked()
+                        {
+                            close = Some(i);
+                        }
+                        ui.add_space(6.0);
+                    }
+                });
+            });
+        if let Some(i) = close {
+            self.close_star_tab(i);
+        } else if let Some(i) = switch_to {
+            self.activate(i);
+        }
+    }
+
     fn finish_load(&mut self) {
         let Some(result) = self.job.as_ref().and_then(Job::poll) else {
             return;
@@ -292,12 +450,10 @@ impl VStarApp {
                 if was_aavso && !ds.star.name.is_empty() {
                     remember_star(&mut self.settings.recent_stars, &ds.star.name);
                 }
+                self.open_star_tab(&ds);
                 self.dataset = Some(ds);
                 self.apply_band_preference();
                 self.reset_view = true;
-                self.phase.reset();
-                self.search.reset();
-                self.tools.reset();
                 self.tab = Tab::LightCurve;
             }
             Err(vstar_core::Error::Cancelled) => {
@@ -384,7 +540,7 @@ impl VStarApp {
                     self.open_tool(Tool::Piecewise);
                 }
                 ui.add_enabled(false, egui::Button::new("VeLa model…"))
-                    .on_disabled_hover_text("VStar's VeLa scripting language isn't in VStar-RS yet.");
+                    .on_disabled_hover_text("VStar's VeLa scripting language isn't in FeStar yet.");
             });
             ui.menu_button("View", |ui| {
                 if ui.button("Reset zoom").clicked() {
@@ -397,7 +553,7 @@ impl VStarApp {
                 ui.hyperlink_to("AAVSO VSX catalogue", "https://vsx.aavso.org/");
                 ui.hyperlink_to("BAA VSS database", BAA_DATABASE_URL);
                 ui.separator();
-                ui.label(format!("VStar-RS {}", env!("CARGO_PKG_VERSION")));
+                ui.label(format!("FeStar {}", env!("CARGO_PKG_VERSION")));
                 ui.label("Based on AAVSO VStar. AGPL-3.0 licence.");
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -413,7 +569,7 @@ impl VStarApp {
     fn side_panel(&mut self, ui: &mut egui::Ui) {
         let busy = self.job.is_some();
         ui.add_space(8.0);
-        ui.heading(RichText::new("VStar-RS").strong());
+        ui.heading(RichText::new("FeStar").strong());
         ui.label(RichText::new("Variable star light curves").weak());
         ui.add_space(8.0);
 
@@ -798,6 +954,8 @@ impl eframe::App for VStarApp {
                 });
                 return;
             }
+            self.star_tabs(ui);
+            ui.separator();
             self.tab_bar(ui);
             ui.add_space(4.0);
             match self.tab {

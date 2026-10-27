@@ -1,10 +1,10 @@
-# VStar-RS
+# FeStar
 
 A redesign of VStar with new AI integrations: a modern, fast desktop app for
 variable star light curve analysis, written in Rust. It is a rewrite of [AAVSO VStar](https://github.com/AAVSO/VStar), which
 it uses as the reference for its data loaders and analysis methods.
 
-![VStar-RS showing a light curve (synthetic demo data)](docs/screenshot-dark.png)
+![FeStar showing a light curve (synthetic demo data)](docs/screenshot-dark.png)
 
 ## Status
 
@@ -39,8 +39,8 @@ can follow.
 ## Getting the Windows app
 
 Every push to `main` builds the Windows app in GitHub Actions. Open the latest
-run under the **Actions** tab and download the `vstar-rs-windows` artifact. It
-contains `vstar-rs.exe`, which runs without installing anything.
+run under the **Actions** tab and download the `festar-windows` artifact. It
+contains `festar.exe`, which runs without installing anything.
 
 If the window stays blank on an older PC, set the environment variable
 `VSTAR_OPENGL=1` to use the OpenGL renderer instead of DirectX 12.
@@ -55,7 +55,7 @@ cargo test
 ```
 
 You can also pass a data file to open at startup:
-`vstar-rs path\to\observations.csv`.
+`festar path\to\observations.csv`.
 
 ## Layout
 
@@ -66,7 +66,7 @@ You can also pass a data file to open at startup:
 ## Licence
 
 VStar is licensed under the GNU Affero General Public License v3, and this
-project ports code from it, so VStar-RS is under the same licence. See
+project ports code from it, so FeStar is under the same licence. See
 [LICENSE](LICENSE).
 
 Please acknowledge the data sources you use: the AAVSO International Database,
