@@ -31,6 +31,8 @@ pub struct Options<'a> {
     pub show_discrepant: bool,
     pub show_fainter_than: bool,
     pub show_errors: bool,
+    /// Label the time axis with calendar dates instead of Julian Dates.
+    pub calendar_axis: bool,
     pub reset_view: bool,
     /// A model curve to draw over the observations (time plots only).
     pub overlay: Option<&'a [[f64; 2]]>,
@@ -154,15 +156,33 @@ pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
     let observations = &ds.observations;
 
     let phase_mode = matches!(opts.mode, Mode::Phase { .. });
+    let calendar_axis = opts.calendar_axis && !phase_mode;
     let mut plot = Plot::new(if phase_mode {
         "phase_plot"
     } else {
         "light_curve"
     })
     .invert_y(true)
-    .x_axis_label(if phase_mode { "Phase" } else { "Julian Date" })
+    .x_axis_label(if phase_mode {
+        "Phase"
+    } else if calendar_axis {
+        "Date (UT)"
+    } else {
+        "Julian Date"
+    })
     .y_axis_label("Magnitude")
     .legend(Legend::default().follow_insertion_order(true))
+    .x_axis_formatter(move |mark, _range| {
+        if !calendar_axis {
+            return egui_plot::format_number(mark.value, 6);
+        }
+        let (y, mo, d, h, mi, _) = time::jd_to_gregorian(mark.value);
+        if mark.step_size >= 1.0 {
+            format!("{y:04}-{mo:02}-{d:02}")
+        } else {
+            format!("{mo:02}-{d:02} {h:02}:{mi:02}")
+        }
+    })
     .label_formatter(move |pos| match pos {
         HoverPosition::NearDataPoint {
             plot_name, index, ..
@@ -193,6 +213,13 @@ pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
             Some(text)
         }
         HoverPosition::Elsewhere { position } => {
+            if calendar_axis {
+                return Some(format!(
+                    "{}\nMag {:.3}",
+                    time::jd_to_ut_string(position.x),
+                    position.y
+                ));
+            }
             let axis = if phase_mode { "Phase" } else { "JD" };
             Some(format!("{axis} {:.4}\nMag {:.3}", position.x, position.y))
         }

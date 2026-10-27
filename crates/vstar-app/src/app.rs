@@ -79,6 +79,8 @@ struct Settings {
     max_date: String,
     ai: AiConfig,
     show_errors: bool,
+    /// Chart dates as calendar dates instead of Julian Dates.
+    calendar_axis: bool,
     show_discrepant: bool,
     show_fainter_than: bool,
     theme: ThemeChoice,
@@ -101,6 +103,7 @@ impl Default for Settings {
             max_date: String::new(),
             ai: AiConfig::default(),
             show_errors: true,
+            calendar_axis: false,
             show_discrepant: false,
             show_fainter_than: true,
             theme: ThemeChoice::System,
@@ -614,6 +617,8 @@ impl VStarApp {
                     self.reset_view = true;
                     ui.close();
                 }
+                ui.separator();
+                ui.checkbox(&mut self.settings.calendar_axis, "Calendar dates on the chart");
             });
             ui.menu_button("Help", |ui| {
                 ui.hyperlink_to("VStar user manual", "https://aavso.github.io/VStar/docs/vstar/release/user_manual/VStarUserManual.pdf");
@@ -965,6 +970,7 @@ impl VStarApp {
             show_discrepant: self.settings.show_discrepant,
             show_fainter_than: self.settings.show_fainter_than,
             show_errors: self.settings.show_errors,
+            calendar_axis: self.settings.calendar_axis,
             reset_view: std::mem::take(&mut self.reset_view),
             overlay: match mode {
                 light_curve::Mode::Time => self.tools.active_model().map(|m| &m.curve[..]),
