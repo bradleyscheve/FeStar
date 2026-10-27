@@ -515,6 +515,7 @@ mod tests {
         );
 
         cfg.provider = Provider::NousPortal;
+        cfg.nous_model = "some-model".into();
         let client = AiClient {
             http: &http,
             config: &cfg,
