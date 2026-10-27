@@ -136,20 +136,28 @@ pub fn parse_fits(bytes: &[u8], id: u64) -> Result<Spectrum> {
     let raw: Vec<f64> = match bitpix {
         8 => data.iter().map(|&b| b as f64).collect(),
         16 => data
-            .chunks_exact(2)
-            .map(|c| i16::from_be_bytes([c[0], c[1]]) as f64)
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| i16::from_be_bytes(*c) as f64)
             .collect(),
         32 => data
-            .chunks_exact(4)
-            .map(|c| i32::from_be_bytes([c[0], c[1], c[2], c[3]]) as f64)
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| i32::from_be_bytes(*c) as f64)
             .collect(),
         -32 => data
-            .chunks_exact(4)
-            .map(|c| f32::from_be_bytes([c[0], c[1], c[2], c[3]]) as f64)
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| f32::from_be_bytes(*c) as f64)
             .collect(),
         -64 => data
-            .chunks_exact(8)
-            .map(|c| f64::from_be_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|c| f64::from_be_bytes(*c))
             .collect(),
         other => {
             return Err(Error::Parse(format!(
