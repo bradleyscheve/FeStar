@@ -21,6 +21,9 @@ pub enum Error {
     #[error("couldn't use the system credential store: {0}")]
     Secret(String),
 
+    #[error("{0}")]
+    Analysis(String),
+
     #[error("loading was cancelled")]
     Cancelled,
 }

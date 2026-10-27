@@ -3,8 +3,14 @@
 //! Ported from AAVSO VStar's `TSDcDft` (the date-compensated discrete
 //! Fourier transform from Foster's TS package) and `PhaseCalcs`.
 
+pub mod aov;
+pub mod binning;
 pub mod dcdft;
+pub mod dft;
+pub mod models;
 pub mod phase;
+pub mod stats;
+pub mod wwz;
 
 use crate::Observation;
 
