@@ -15,6 +15,7 @@ pub mod model;
 pub mod planetarium;
 pub mod secrets;
 pub mod sources;
+pub mod spectra;
 pub mod time;
 pub mod vartypes;
 
