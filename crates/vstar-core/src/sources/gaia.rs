@@ -76,7 +76,7 @@ pub fn cone_search_url(ra_deg: f64, dec_deg: f64) -> String {
 /// Where a source's epoch photometry can be downloaded as CSV.
 pub fn epoch_photometry_url(source_id: u64) -> String {
     format!(
-        "{DATA_URL}?ID=Gaia+DR3+{source_id}&RETRIEVAL_TYPE=EPOCH_PHOTOMETRY&FORMAT=csv&USE_ZIP_ALWAYS=false"
+        "{DATA_URL}?ID=Gaia+DR3+{source_id}&RETRIEVAL_TYPE=EPOCH_PHOTOMETRY&FORMAT=csv&DATA_STRUCTURE=INDIVIDUAL&USE_ZIP_ALWAYS=false"
     )
 }
 
@@ -128,6 +128,20 @@ pub fn pick_source(csv_text: &str) -> Result<u64> {
 
 /// Parse the data server's epoch-photometry CSV into observations.
 pub fn parse_epoch_photometry(csv_text: &str) -> Result<Vec<Observation>> {
+    // Skip comment lines and anything before the header row.
+    let start = csv_text
+        .lines()
+        .scan(0usize, |pos, line| {
+            let at = *pos;
+            *pos += line.len() + 1;
+            Some((at, line))
+        })
+        .find(|(_, l)| {
+            let l = l.to_ascii_lowercase();
+            !l.starts_with('#') && l.contains("band") && l.contains("time") && l.contains("mag")
+        })
+        .map_or(0, |(at, _)| at);
+    let csv_text = csv_text.get(start..).unwrap_or(csv_text);
     let mut rdr = csv_reader(csv_text);
     let headers = rdr
         .headers()
@@ -136,9 +150,10 @@ pub fn parse_epoch_photometry(csv_text: &str) -> Result<Vec<Observation>> {
     let col = |name: &str| headers.iter().position(|h| h.eq_ignore_ascii_case(name));
     let (Some(band_col), Some(time_col), Some(mag_col)) = (col("band"), col("time"), col("mag"))
     else {
-        return Err(Error::Parse(
-            "the Gaia epoch photometry had no band, time and mag columns".into(),
-        ));
+        let head: String = csv_text.chars().take(300).collect();
+        return Err(Error::Parse(format!(
+            "the Gaia epoch photometry had no band, time and mag columns. The archive sent: {head}"
+        )));
     };
     let foe_col = col("flux_over_error");
     let rejected_col = col("rejected_by_photometry");
