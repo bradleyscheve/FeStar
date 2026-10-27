@@ -12,6 +12,7 @@ use crate::loader::{Job, Request};
 use crate::phase_ui::PhaseState;
 use crate::prefs::{PrefsState, Secrets};
 use crate::search_ui::{SearchMode, SearchState};
+use crate::spectra_ui::SpectraState;
 use crate::task::Task;
 use crate::tools_ui::{Tool, ToolsState};
 use crate::vsp_ui::VspState;
@@ -50,6 +51,8 @@ pub enum Tab {
     Tool,
     /// A fitted model and its residuals.
     Model,
+    /// Recent spectra from the AAVSO spectroscopy database.
+    Spectra,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,6 +153,7 @@ struct StarSlot {
     phase: PhaseState,
     search: SearchState,
     tools: ToolsState,
+    spectra: SpectraState,
 }
 
 pub struct VStarApp {
@@ -170,6 +174,7 @@ pub struct VStarApp {
     vsp: VspState,
     external_task: Option<Task<String>>,
     pub(crate) tools: ToolsState,
+    pub(crate) spectra: SpectraState,
     secrets: Secrets,
 }
 
@@ -211,6 +216,7 @@ impl VStarApp {
             vsp: VspState::default(),
             external_task: None,
             tools: ToolsState::default(),
+            spectra: SpectraState::default(),
             secrets: Secrets::new(),
         }
     }
@@ -325,6 +331,7 @@ impl VStarApp {
                 phase: std::mem::take(&mut self.phase),
                 search: std::mem::take(&mut self.search),
                 tools: std::mem::take(&mut self.tools),
+                spectra: std::mem::take(&mut self.spectra),
             };
         }
     }
@@ -344,6 +351,7 @@ impl VStarApp {
             self.phase = slot.phase;
             self.search = slot.search;
             self.tools = slot.tools;
+            self.spectra = slot.spectra;
             self.active = i;
         }
     }
@@ -370,6 +378,7 @@ impl VStarApp {
         self.phase.reset();
         self.search.reset();
         self.tools.reset();
+        self.spectra.reset();
     }
 
     fn close_star_tab(&mut self, i: usize) {
@@ -382,6 +391,8 @@ impl VStarApp {
             self.phase.reset();
             self.search.reset();
             self.tools.reset();
+            self.spectra.reset();
+            self.spectra.reset();
             self.slots.remove(i);
             if self.slots.is_empty() {
                 self.active = 0;
@@ -804,23 +815,37 @@ impl VStarApp {
                         });
                         ui.end_row();
                     }
-                    let mut row = |k: &str, v: Option<String>| {
+                    let row = |ui: &mut egui::Ui, k: &str, v: Option<String>| {
                         if let Some(v) = v {
                             ui.label(RichText::new(k).weak());
                             ui.label(v);
                             ui.end_row();
                         }
                     };
-                    row("Period", ds.star.period_days.map(|p| format!("{p} d")));
-                    row("Epoch", ds.star.epoch_jd.map(|e| format!("JD {e}")));
-                    row("Spectrum", ds.star.spectral_type.clone());
-                    row("RA", ds.star.ra_deg.map(format_ra));
-                    row("Dec", ds.star.dec_deg.map(format_dec));
-                    row("AUID", ds.star.auid.clone());
-                    row("Observations", Some(ds.observations.len().to_string()));
-                    row("Source", Some(ds.source.clone()));
+                    row(ui, "Period", ds.star.period_days.map(|p| format!("{p} d")));
+                    row(ui, "Epoch", ds.star.epoch_jd.map(|e| format!("JD {e}")));
+                    ui.label(RichText::new("Spectrum").weak());
+                    ui.horizontal(|ui| {
+                        ui.label(ds.star.spectral_type.as_deref().unwrap_or("unknown"));
+                        if ui
+                            .small_button("Spectra")
+                            .on_hover_text(
+                                "Load this star's 4 most recent spectra from the AAVSO spectroscopy database",
+                            )
+                            .clicked()
+                        {
+                            self.spectra.request(ui.ctx(), &ds.star.name);
+                            self.tab = Tab::Spectra;
+                        }
+                    });
+                    ui.end_row();
+                    row(ui, "RA", ds.star.ra_deg.map(format_ra));
+                    row(ui, "Dec", ds.star.dec_deg.map(format_dec));
+                    row(ui, "AUID", ds.star.auid.clone());
+                    row(ui, "Observations", Some(ds.observations.len().to_string()));
+                    row(ui, "Source", Some(ds.source.clone()));
                     if let Some((a, b)) = ds.jd_range() {
-                        row("JD range", Some(format!("{a:.1} – {b:.1}")));
+                        row(ui, "JD range", Some(format!("{a:.1} – {b:.1}")));
                     }
                 });
             let position = ds.star.ra_deg.zip(ds.star.dec_deg);
@@ -968,6 +993,9 @@ impl VStarApp {
             if self.tools.active_model().is_some() {
                 ui.selectable_value(&mut self.tab, Tab::Model, "Model");
             }
+            if self.spectra.opened {
+                ui.selectable_value(&mut self.tab, Tab::Spectra, "Spectra");
+            }
             if let (Tab::PhasePlot, Some((period, epoch))) = (self.tab, self.phase.active) {
                 ui.separator();
                 ui.label(RichText::new(format!("Period {period} d, epoch JD {epoch:.4}")).weak());
@@ -1042,6 +1070,7 @@ impl eframe::App for VStarApp {
         self.poll_search();
         self.poll_phase_ai();
         self.poll_external();
+        self.poll_spectra();
         let ctx = ui.ctx().clone();
         self.poll_tools(&ctx);
         self.vsp.show(&ctx);
@@ -1101,6 +1130,7 @@ impl eframe::App for VStarApp {
                 Tab::PeriodSearch => self.show_search_results(ui),
                 Tab::Tool => self.show_tool_results(ui),
                 Tab::Model => self.show_model_tab(ui),
+                Tab::Spectra => self.show_spectra_tab(ui),
             }
         });
     }

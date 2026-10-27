@@ -1,6 +1,7 @@
 //! Places observations can be loaded from.
 
 pub mod aavso;
+pub mod avspec;
 pub mod csv_import;
 pub mod gaia;
 pub mod vsp;

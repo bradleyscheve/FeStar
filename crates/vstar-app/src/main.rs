@@ -9,6 +9,7 @@ mod loader;
 mod phase_ui;
 mod prefs;
 mod search_ui;
+mod spectra_ui;
 mod task;
 mod theme;
 mod tools_ui;

@@ -40,7 +40,17 @@ pub trait HttpClient: Send + Sync {
 
     /// POST `application/x-www-form-urlencoded` fields and return the
     /// response body (used for programs on this computer, such as Stellarium).
-    fn post_form(&self, _url: &str, _fields: &[(&str, &str)]) -> Result<String> {
+    fn post_form(&self, url: &str, fields: &[(&str, &str)]) -> Result<String> {
+        self.post_form_with_headers(url, fields, &[])
+    }
+
+    /// Like `post_form`, with extra request `headers`.
+    fn post_form_with_headers(
+        &self,
+        _url: &str,
+        _fields: &[(&str, &str)],
+        _headers: &[(&str, &str)],
+    ) -> Result<String> {
         Err(Error::Network(
             "this HTTP client can't send POST requests".into(),
         ))
@@ -58,6 +68,8 @@ impl ReqwestClient {
         let inner = reqwest::blocking::Client::builder()
             .user_agent(concat!("FeStar/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(120))
+            // Some sites (AVSpec) tie a form to a cookie set when it is shown.
+            .cookie_store(true)
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
         Ok(Self { inner })
@@ -152,13 +164,17 @@ impl HttpClient for ReqwestClient {
         Ok(text)
     }
 
-    fn post_form(&self, url: &str, fields: &[(&str, &str)]) -> Result<String> {
-        let resp = self
-            .inner
-            .post(url)
-            .form(fields)
-            .send()
-            .map_err(|e| Error::Network(e.to_string()))?;
+    fn post_form_with_headers(
+        &self,
+        url: &str,
+        fields: &[(&str, &str)],
+        headers: &[(&str, &str)],
+    ) -> Result<String> {
+        let mut req = self.inner.post(url).form(fields);
+        for (name, value) in headers {
+            req = req.header(*name, *value);
+        }
+        let resp = req.send().map_err(|e| Error::Network(e.to_string()))?;
         let status = resp.status();
         let text = resp.text().map_err(|e| Error::Network(e.to_string()))?;
         if !status.is_success() {
