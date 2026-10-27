@@ -81,6 +81,8 @@ struct Settings {
     show_fainter_than: bool,
     theme: ThemeChoice,
     recent_stars: Vec<String>,
+    /// Bands the user has left checked; applied to every star loaded.
+    shown_bands: Vec<String>,
 }
 
 impl Default for Settings {
@@ -100,6 +102,7 @@ impl Default for Settings {
             show_fainter_than: true,
             theme: ThemeChoice::System,
             recent_stars: Vec::new(),
+            shown_bands: vec!["V".into()],
         }
     }
 }
@@ -280,8 +283,8 @@ impl VStarApp {
                 if was_aavso && !ds.star.name.is_empty() {
                     remember_star(&mut self.settings.recent_stars, &ds.star.name);
                 }
-                self.hidden_bands.clear();
                 self.dataset = Some(ds);
+                self.apply_band_preference();
                 self.reset_view = true;
                 self.phase.reset();
                 self.search.reset();
@@ -559,6 +562,7 @@ impl VStarApp {
         });
 
         ui.add_space(8.0);
+        let mut band_changed = false;
         theme::card(ui).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
@@ -566,9 +570,11 @@ impl VStarApp {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui.small_button("None").clicked() {
                         self.hidden_bands = ds.band_counts().into_iter().map(|(b, _)| b).collect();
+                        band_changed = true;
                     }
                     if ui.small_button("All").clicked() {
                         self.hidden_bands.clear();
+                        band_changed = true;
                     }
                 });
             });
@@ -585,6 +591,7 @@ impl VStarApp {
                         } else {
                             self.hidden_bands.insert(band.clone());
                         }
+                        band_changed = true;
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(RichText::new(count.to_string()).weak());
@@ -602,6 +609,33 @@ impl VStarApp {
                 "Discrepant observations",
             );
         });
+        if band_changed {
+            self.sync_band_preference();
+        }
+    }
+
+    /// Show the bands the user has left checked (Johnson V at first). If
+    /// this star has none of them, show everything rather than nothing.
+    fn apply_band_preference(&mut self) {
+        let Some(ds) = &self.dataset else { return };
+        let all: Vec<String> = ds.band_counts().into_iter().map(|(b, _)| b).collect();
+        let preferred = &self.settings.shown_bands;
+        self.hidden_bands = if all.iter().any(|b| preferred.contains(b)) {
+            all.into_iter().filter(|b| !preferred.contains(b)).collect()
+        } else {
+            HashSet::new()
+        };
+    }
+
+    /// Remember the current checkboxes for the next star. Bands this star
+    /// doesn't have keep whatever choice was made before.
+    fn sync_band_preference(&mut self) {
+        let Some(ds) = &self.dataset else { return };
+        let here: Vec<String> = ds.band_counts().into_iter().map(|(b, _)| b).collect();
+        self.settings.shown_bands.retain(|b| !here.contains(b));
+        self.settings
+            .shown_bands
+            .extend(here.into_iter().filter(|b| !self.hidden_bands.contains(b)));
     }
 
     fn tab_bar(&mut self, ui: &mut egui::Ui) {
