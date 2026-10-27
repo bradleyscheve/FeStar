@@ -169,7 +169,7 @@ pub fn icon(ui: &mut egui::Ui, icon: Icon) {
 }
 
 /// The nova picture is drawn at this fraction of its full size.
-const NOVA_SCALE: f32 = 0.75;
+const NOVA_SCALE: f32 = 0.375;
 
 /// A small star picture for the info card: coloured by spectral type, drawn
 /// as a pair for binaries and as a star inside a disc for novae.
