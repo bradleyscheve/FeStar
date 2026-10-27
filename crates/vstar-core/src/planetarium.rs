@@ -67,7 +67,11 @@ pub fn open_in_stellarium(
     dec_deg: f64,
 ) -> Result<()> {
     let script = stellarium_script(ra_deg, dec_deg);
-    http.post_form(&stellarium_url(port), &[("code", script.as_str())])?;
+    // Stellarium's web server doesn't always read a form body, so the script
+    // also goes in the address, which it always reads.
+    let code = super::sources::encode_query_value(&script).replace('+', "%20");
+    let url = format!("{}?code={code}", stellarium_url(port));
+    http.post_form(&url, &[("code", script.as_str())])?;
     Ok(())
 }
 
@@ -143,7 +147,7 @@ mod tests {
         let calls = http.calls.lock().unwrap();
         assert!(
             calls[0].starts_with(
-                "http://localhost:8090/api/scripts/direct code=core.moveToRaDecJ2000("
+                "http://localhost:8090/api/scripts/direct?code=core.moveToRaDecJ2000%28"
             )
         );
         assert!(calls[0].contains("15h59m30.24s"));
