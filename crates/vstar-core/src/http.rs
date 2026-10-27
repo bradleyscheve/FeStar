@@ -44,6 +44,19 @@ pub trait HttpClient: Send + Sync {
         self.post_form_with_headers(url, fields, &[])
     }
 
+    /// Like `post_form_with_headers`, returning the raw bytes of the answer
+    /// (for files).
+    fn post_form_bytes_with_headers(
+        &self,
+        _url: &str,
+        _fields: &[(&str, &str)],
+        _headers: &[(&str, &str)],
+    ) -> Result<Vec<u8>> {
+        Err(Error::Network(
+            "this HTTP client can't send POST requests".into(),
+        ))
+    }
+
     /// Like `post_form`, with extra request `headers`.
     fn post_form_with_headers(
         &self,
@@ -162,6 +175,28 @@ impl HttpClient for ReqwestClient {
             )));
         }
         Ok(text)
+    }
+
+    fn post_form_bytes_with_headers(
+        &self,
+        url: &str,
+        fields: &[(&str, &str)],
+        headers: &[(&str, &str)],
+    ) -> Result<Vec<u8>> {
+        let mut req = self.inner.post(url).form(fields);
+        for (name, value) in headers {
+            req = req.header(*name, *value);
+        }
+        let resp = req.send().map_err(|e| Error::Network(e.to_string()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(Error::Network(format!(
+                "server answered {status} for {url}"
+            )));
+        }
+        resp.bytes()
+            .map(|b| b.to_vec())
+            .map_err(|e| Error::Network(e.to_string()))
     }
 
     fn post_form_with_headers(

@@ -8,15 +8,16 @@ it uses as the reference for its data loaders and analysis methods.
 
 ## Status
 
-This is step 1 of 4 in the plan:
+Progress against the four-step plan:
 
-1. **Foundation (this step):** the app window, AAVSO and BAA data loading, and
-   an interactive light curve. *Done.*
-2. **Analysis:** period search (DCDFT, Lomb-Scargle and others, ported from
-   VStar), phase plots, and favourite stars whose data is preloaded at startup.
-3. **Gaia:** Gaia DR3 epoch photometry for the selected star.
+1. **Foundation:** the app window, AAVSO and BAA data loading, and an
+   interactive light curve. *Done.*
+2. **Analysis:** period search, phase plots and models, favourite stars.
+   *Built, in review.*
+3. **Gaia:** Gaia DR3 epoch photometry for the selected star. *Built, in
+   review.*
 4. **AI and packaging:** optional AI help choosing period-search settings and
-   explaining results, then a Windows installer.
+   explaining results, then a Windows installer. *Not started.*
 
 Windows is the first target. The code is portable, so macOS and Linux builds
 can follow.
@@ -26,13 +27,18 @@ can follow.
 - **AAVSO International Database:** type a star name (e.g. `SS Cyg`) and load
   its observations, optionally limited to a JD range. Star details (type,
   period, spectral type, coordinates) come from VSX.
-- **BAA VSS database:** download a star's observations as CSV from the
-  [BAA VSS database](https://britastro.org/vssdb/data.php) and open the file.
+- **BAA VSS database and Gaia DR3:** download BAA observations as CSV and open
+  the file, or load Gaia epoch photometry (G, BP, RP) for variable stars.
 - **Other files:** AAVSO download files, VStar "simple format" files, and most
   CSV or tab-separated files with JD (or UT date) and magnitude columns.
 - **Light curve:** zoom, pan, hover for details of each observation, per-band
-  colours matching VStar, error bars, fainter-than estimates and discrepant
-  observations on or off.
+  colours, error bars, fainter-than estimates, discrepant observations on or
+  off, and Julian or calendar dates on the axis.
+- **Analysis:** period search, phase plots and models.
+- **One tab per loaded star**, so you can switch stars without reloading.
+- **Star card:** variability type, spectral type and a star icon that reflects
+  the type; buttons to open the star's VSP chart, VSX page, Stellarium and
+  N.I.N.A. framing, and to view the latest AAVSO spectra.
 - Light, dark or follow-Windows theme. Recent stars and settings are
   remembered between runs.
 
@@ -50,7 +56,7 @@ If the window stays blank on an older PC, set the environment variable
 Install Rust from <https://rustup.rs>, then:
 
 ```
-cargo run --release -p vstar-app
+cargo run --release -p vstar-app --bin festar
 cargo test
 ```
 

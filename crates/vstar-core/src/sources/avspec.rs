@@ -141,6 +141,68 @@ pub fn search(http: &dyn HttpClient, name: &str) -> Result<Vec<SpectrumRow>> {
     Ok(parse_results(&html))
 }
 
+/// A short description of a reply that isn't a FITS file, for error messages.
+fn describe_reply(bytes: &[u8]) -> String {
+    if bytes.starts_with(b"PK") {
+        return "a zip file".into();
+    }
+    let text = String::from_utf8_lossy(&bytes[..bytes.len().min(6000)]);
+    if text.contains("<html") || text.contains("<!DOCTYPE") || text.contains("<!doctype") {
+        let title = text
+            .split("<title>")
+            .nth(1)
+            .and_then(|t| t.split("</title>").next())
+            .map(strip_tags)
+            .unwrap_or_default();
+        let login = text.contains("login") || text.contains("Log in") || text.contains("Sign in");
+        return format!(
+            "a web page titled \"{title}\"{}",
+            if login {
+                " that mentions logging in"
+            } else {
+                ""
+            }
+        );
+    }
+    format!("{} bytes of something else", bytes.len())
+}
+
+/// Download one spectrum's FITS file. AVSpec's own Download button submits
+/// the search form with the spectrum's id, so that is tried if the direct
+/// address doesn't give a FITS file.
+pub fn download(http: &dyn HttpClient, id: u64) -> Result<Vec<u8>> {
+    let mut problems = Vec::new();
+    match http.get_bytes(&spectra::download_url(id)) {
+        Ok(bytes) if bytes.starts_with(b"SIMPLE") => return Ok(bytes),
+        Ok(bytes) => problems.push(format!(
+            "the direct address gave {}",
+            describe_reply(&bytes)
+        )),
+        Err(e) => problems.push(format!("the direct address failed ({e})")),
+    }
+    let page = http.get_text(SEARCH_URL)?;
+    if let Some(token) = parse_csrf(&page) {
+        let id_text = id.to_string();
+        let fields = [
+            ("csrfmiddlewaretoken", token.as_str()),
+            ("specids", id_text.as_str()),
+        ];
+        match http.post_form_bytes_with_headers(
+            SEARCH_URL,
+            &fields,
+            &[("Referer", SEARCH_URL), ("Origin", ORIGIN)],
+        ) {
+            Ok(bytes) if bytes.starts_with(b"SIMPLE") => return Ok(bytes),
+            Ok(bytes) => problems.push(format!("the search form gave {}", describe_reply(&bytes))),
+            Err(e) => problems.push(format!("the search form failed ({e})")),
+        }
+    }
+    Err(Error::Analysis(format!(
+        "couldn't download spectrum {id} from AVSpec: {}",
+        problems.join("; ")
+    )))
+}
+
 /// The `count` most recent spectra of a star, downloaded and read.
 pub fn latest(http: &dyn HttpClient, name: &str, count: usize) -> Result<Vec<Record>> {
     let rows = search(http, name)?;
@@ -153,7 +215,7 @@ pub fn latest(http: &dyn HttpClient, name: &str, count: usize) -> Result<Vec<Rec
     rows.into_iter()
         .take(count)
         .map(|row| {
-            let bytes = http.get_bytes(&spectra::download_url(row.id))?;
+            let bytes = download(http, row.id)?;
             let spectrum = spectra::parse_fits(&bytes, row.id)?;
             Ok(Record { row, spectrum })
         })
@@ -250,7 +312,7 @@ mod tests {
             results: result_row(5, "2460000.5", "2023-02-25"),
         };
         let err = latest(&some, "del cep", 4).unwrap_err();
-        assert!(err.to_string().contains("FITS"));
+        assert!(err.to_string().contains("couldn't download"));
     }
 }
 
