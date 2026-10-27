@@ -119,21 +119,19 @@ pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
             } => {
                 let s = meta.iter().find(|s| s.name == *plot_name)?;
                 let o = &observations[*s.obs.get(*index)?];
+                let error = if o.error > 0.0 {
+                    format!("± {:.3}", o.error)
+                } else {
+                    "not given".to_string()
+                };
                 let mut text = format!(
-                    "{plot_name}\nJD {:.5}\n{}\nMag {}{:.3}{}",
+                    "{plot_name}\nJD {:.5}\n{}\nMag {}{:.3}\nError {error}\nObscode {}",
                     o.jd,
                     time::jd_to_ut_string(o.jd),
                     if o.fainter_than { "<" } else { "" },
                     o.mag,
-                    if o.error > 0.0 {
-                        format!(" ± {:.3}", o.error)
-                    } else {
-                        String::new()
-                    },
+                    o.observer.as_deref().unwrap_or("not given"),
                 );
-                if let Some(obs) = &o.observer {
-                    text.push_str(&format!("\nObserver {obs}"));
-                }
                 if let Some(c) = &o.comment {
                     text.push_str(&format!("\n{c}"));
                 }

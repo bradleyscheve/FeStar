@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use egui::{Align, Layout, RichText};
 use serde::{Deserialize, Serialize};
 use vstar_core::sources::aavso;
-use vstar_core::{Dataset, StarQuery, bands};
+use vstar_core::{Dataset, StarQuery, bands, time};
 
 use crate::loader::{Job, Request};
 use crate::{light_curve, theme};
@@ -46,6 +46,9 @@ struct Settings {
     limit_dates: bool,
     min_jd: String,
     max_jd: String,
+    limit_calendar: bool,
+    min_date: String,
+    max_date: String,
     show_errors: bool,
     show_discrepant: bool,
     show_fainter_than: bool,
@@ -61,6 +64,9 @@ impl Default for Settings {
             limit_dates: false,
             min_jd: String::new(),
             max_jd: String::new(),
+            limit_calendar: false,
+            min_date: String::new(),
+            max_date: String::new(),
             show_errors: true,
             show_discrepant: false,
             show_fainter_than: true,
@@ -123,6 +129,14 @@ impl VStarApp {
                 if self.settings.limit_dates {
                     query.min_jd = parse_jd(&self.settings.min_jd);
                     query.max_jd = parse_jd(&self.settings.max_jd);
+                } else if self.settings.limit_calendar {
+                    match calendar_range(&self.settings.min_date, &self.settings.max_date) {
+                        Ok((min, max)) => (query.min_jd, query.max_jd) = (min, max),
+                        Err(msg) => {
+                            self.status = Status::Error(msg);
+                            return;
+                        }
+                    }
                 }
                 Request::Aavso(query)
             }
@@ -244,12 +258,38 @@ impl VStarApp {
                     );
                     let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
-                    ui.checkbox(&mut self.settings.limit_dates, "Limit to a JD range");
+                    // The two ranges are alternatives: ticking one clears the other.
+                    if ui.checkbox(&mut self.settings.limit_dates, "Limit to a JD range").changed()
+                        && self.settings.limit_dates
+                    {
+                        self.settings.limit_calendar = false;
+                    }
                     if self.settings.limit_dates {
                         ui.horizontal(|ui| {
                             ui.add(egui::TextEdit::singleline(&mut self.settings.min_jd).hint_text("from JD").desired_width(100.0));
                             ui.add(egui::TextEdit::singleline(&mut self.settings.max_jd).hint_text("to JD").desired_width(100.0));
                         });
+                    }
+                    if ui.checkbox(&mut self.settings.limit_calendar, "Limit to a calendar date range").changed()
+                        && self.settings.limit_calendar
+                    {
+                        self.settings.limit_dates = false;
+                    }
+                    if self.settings.limit_calendar {
+                        ui.horizontal(|ui| {
+                            ui.add(egui::TextEdit::singleline(&mut self.settings.min_date).hint_text("from YYYY-MM-DD").desired_width(100.0));
+                            ui.add(egui::TextEdit::singleline(&mut self.settings.max_date).hint_text("to YYYY-MM-DD").desired_width(100.0));
+                        });
+                        match calendar_range(&self.settings.min_date, &self.settings.max_date) {
+                            Ok((None, None)) => {}
+                            Ok((min, max)) => {
+                                let fmt = |jd: Option<f64>| jd.map_or("…".to_string(), |j| format!("{j:.1}"));
+                                ui.label(RichText::new(format!("JD {} – {}", fmt(min), fmt(max))).weak());
+                            }
+                            Err(msg) => {
+                                ui.colored_label(ui.visuals().error_fg_color, msg);
+                            }
+                        }
                     }
                     let load = ui.add_enabled(!busy, egui::Button::new("Load observations").min_size([ui.available_width(), 30.0].into()));
                     if (load.clicked() || enter) && !busy {
@@ -456,6 +496,33 @@ fn parse_jd(s: &str) -> Option<f64> {
     s.trim().parse().ok()
 }
 
+/// Convert a calendar date range (UT) to a JD range. Either end may be
+/// blank. A "to" date without a time includes that whole day.
+fn calendar_range(from: &str, to: &str) -> Result<(Option<f64>, Option<f64>), String> {
+    let parse = |s: &str, end_of_day: bool| -> Result<Option<f64>, String> {
+        let s = s.trim();
+        if s.is_empty() {
+            return Ok(None);
+        }
+        let jd = time::parse_ut_to_jd(s)
+            .ok_or_else(|| format!("\"{s}\" isn't a date. Use YYYY-MM-DD, e.g. 2024-03-15."))?;
+        let has_time =
+            s.contains([' ', 'T']) || s.split('-').nth(2).is_some_and(|d| d.contains('.'));
+        Ok(Some(if end_of_day && !has_time {
+            jd + 1.0
+        } else {
+            jd
+        }))
+    };
+    let (min, max) = (parse(from, false)?, parse(to, true)?);
+    if let (Some(a), Some(b)) = (min, max)
+        && a >= b
+    {
+        return Err("The \"from\" date must be before the \"to\" date.".into());
+    }
+    Ok((min, max))
+}
+
 fn remember_star(recent: &mut Vec<String>, name: &str) {
     recent.retain(|n| !n.eq_ignore_ascii_case(name));
     recent.insert(0, name.to_string());
@@ -488,6 +555,21 @@ fn format_dec(deg: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn converts_calendar_ranges() {
+        assert_eq!(calendar_range("", ""), Ok((None, None)));
+        assert_eq!(
+            calendar_range("2000-01-01", "2000-01-01"),
+            Ok((Some(2451544.5), Some(2451545.5)))
+        );
+        assert_eq!(
+            calendar_range("2000-01-01 12:00", ""),
+            Ok((Some(2451545.0), None))
+        );
+        assert!(calendar_range("2000-13-01", "").is_err());
+        assert!(calendar_range("2001-01-01", "2000-01-01").is_err());
+    }
 
     #[test]
     fn formats_coordinates() {
