@@ -49,6 +49,28 @@ pub fn chart_request_url(star_name: &str, fov: f64, mag_limit: f64) -> String {
     )
 }
 
+/// The picture's address when VSP doesn't give a usable one.
+fn fallback_image_url(chart_id: &str) -> String {
+    format!("https://apps.aavso.org/vsp/chart/{chart_id}.png?type=chart")
+}
+
+/// VSP echoes our `format=json` request in the image address, and asking
+/// for the picture "as JSON" makes its server fail with a 500. Drop it.
+fn without_format_json(url: &str) -> String {
+    let Some((base, query)) = url.split_once('?') else {
+        return url.to_string();
+    };
+    let kept: Vec<&str> = query
+        .split('&')
+        .filter(|p| !p.eq_ignore_ascii_case("format=json"))
+        .collect();
+    if kept.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}?{}", kept.join("&"))
+    }
+}
+
 pub fn parse_chart(json: &str) -> Result<Chart> {
     let v: Value = serde_json::from_str(json)
         .map_err(|e| Error::Network(format!("unreadable answer from VSP: {e}")))?;
@@ -60,8 +82,8 @@ pub fn parse_chart(json: &str) -> Result<Chart> {
     let image_url = v["image_uri"]
         .as_str()
         .filter(|s| s.starts_with("https://"))
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("https://apps.aavso.org/vsp/chart/{chart_id}.png?type=chart"));
+        .map(without_format_json)
+        .unwrap_or_else(|| fallback_image_url(&chart_id));
     let page_url = format!("https://apps.aavso.org/vsp/chart/{chart_id}/");
     Ok(Chart {
         chart_id,
@@ -91,13 +113,67 @@ pub fn fetch_chart(http: &dyn HttpClient, star_name: &str, fov: f64) -> Result<(
     if chart.mag_limit <= 0.0 {
         chart.mag_limit = mag_limit;
     }
-    let image = http.get_bytes(&chart.image_url)?;
-    Ok((chart, image))
+    // The address VSP gave, then the plain chart picture for that id.
+    let mut candidates = vec![chart.image_url.clone()];
+    for extra in [
+        fallback_image_url(&chart.chart_id),
+        format!("https://apps.aavso.org/vsp/chart/{}.png", chart.chart_id),
+    ] {
+        if !candidates.contains(&extra) {
+            candidates.push(extra);
+        }
+    }
+    let mut last_error = None;
+    for url in candidates {
+        match http.get_bytes(&url) {
+            Ok(image) => {
+                chart.image_url = url;
+                return Ok((chart, image));
+            }
+            Err(e) => last_error = Some(e),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| Error::Network("VSP sent no chart picture".into())))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn drops_format_json_from_image_address() {
+        let json = r#"{"chartid":"X43358AGB","image_uri":"https://apps.aavso.org/vsp/chart/X43358AGB.png?format=json"}"#;
+        let chart = parse_chart(json).unwrap();
+        assert_eq!(
+            chart.image_url,
+            "https://apps.aavso.org/vsp/chart/X43358AGB.png"
+        );
+        assert_eq!(
+            without_format_json("https://x/y.png?type=chart&format=json"),
+            "https://x/y.png?type=chart"
+        );
+    }
+
+    struct BrokenFirstPicture;
+    impl HttpClient for BrokenFirstPicture {
+        fn get_text(&self, _: &str) -> Result<String> {
+            Ok(r#"{"chartid":"X1","image_uri":"https://apps.aavso.org/vsp/chart/X1.png"}"#.into())
+        }
+        fn get_bytes(&self, url: &str) -> Result<Vec<u8>> {
+            if url.ends_with("type=chart") {
+                Ok(vec![7])
+            } else {
+                Err(Error::Network("server answered 500".into()))
+            }
+        }
+    }
+
+    #[test]
+    fn falls_back_to_another_picture_address() {
+        let (chart, image) = fetch_chart(&BrokenFirstPicture, "U Sco", 60.0).unwrap();
+        assert_eq!(image, vec![7]);
+        assert!(chart.image_url.ends_with("type=chart"));
+    }
 
     #[test]
     fn builds_request() {
