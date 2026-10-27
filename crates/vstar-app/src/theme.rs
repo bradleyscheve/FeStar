@@ -168,6 +168,9 @@ pub fn icon(ui: &mut egui::Ui, icon: Icon) {
     }
 }
 
+/// The nova picture is drawn at this fraction of its full size.
+const NOVA_SCALE: f32 = 0.75;
+
 /// A small star picture for the info card: coloured by spectral type, drawn
 /// as a pair for binaries and as a star inside a disc for novae.
 pub fn star_icon(
@@ -177,7 +180,7 @@ pub fn star_icon(
 ) -> egui::Response {
     use vstar_core::vartypes::StarLook;
     let size = if look == StarLook::Nova {
-        Vec2::new(68.0, 30.0)
+        Vec2::new(68.0 * NOVA_SCALE, 30.0 * NOVA_SCALE)
     } else {
         Vec2::new(40.0, 22.0)
     };
@@ -222,21 +225,22 @@ pub fn star_icon(
             star(c + Vec2::new(-5.0, 0.0), 6.5, base);
         }
         StarLook::Nova => {
+            const K: f32 = NOVA_SCALE;
             // Like the usual artist's picture: a red donor star on the left,
             // a stream of gas that narrows toward a flat, glowing disc around
             // the white dwarf at the lower right.
-            let donor_c = egui::pos2(rect.left() + 11.5, c.y - 3.5);
-            let disc_c = egui::pos2(rect.right() - 17.0, c.y + 6.5);
+            let donor_c = egui::pos2(rect.left() + 11.5 * K, c.y - 3.5 * K);
+            let disc_c = egui::pos2(rect.right() - 17.0 * K, c.y + 6.5 * K);
             let donor_col = Color32::from_rgb(235, 80, 30);
             let stream_hot = Color32::from_rgb(255, 215, 90);
             let stream_cool = Color32::from_rgb(160, 185, 255);
             // The stream: a tapered strip fading from yellow to blue.
             let mut mesh = egui::Mesh::default();
             let ends = [
-                (donor_c + Vec2::new(3.0, -10.0), stream_hot),
-                (donor_c + Vec2::new(3.0, 10.0), stream_hot),
-                (disc_c + Vec2::new(-6.0, -7.5), stream_cool),
-                (disc_c + Vec2::new(-2.0, -2.0), stream_cool),
+                (donor_c + Vec2::new(3.0 * K, -10.0 * K), stream_hot),
+                (donor_c + Vec2::new(3.0 * K, 10.0 * K), stream_hot),
+                (disc_c + Vec2::new(-6.0 * K, -7.5 * K), stream_cool),
+                (disc_c + Vec2::new(-2.0 * K, -2.0 * K), stream_cool),
             ];
             for (pos, color) in ends {
                 mesh.colored_vertex(pos, color);
@@ -254,29 +258,29 @@ pub fn star_icon(
                     .collect()
             };
             painter.add(egui::Shape::convex_polygon(
-                ellipse(16.0, 7.5),
+                ellipse(16.0 * K, 7.5 * K),
                 Color32::from_rgb(110, 145, 205),
                 Stroke::new(0.8, rim.gamma_multiply(0.7)),
             ));
             painter.add(egui::Shape::convex_polygon(
-                ellipse(11.0, 5.2),
+                ellipse(11.0 * K, 5.2 * K),
                 Color32::from_rgb(170, 200, 240),
                 Stroke::NONE,
             ));
             painter.add(egui::Shape::convex_polygon(
-                ellipse(5.5, 2.6),
+                ellipse(5.5 * K, 2.6 * K),
                 Color32::from_rgb(225, 240, 255),
                 Stroke::NONE,
             ));
             // The white dwarf itself, small, hot and blue-white.
-            painter.circle_filled(disc_c, 2.6, Color32::from_rgb(245, 250, 255));
+            painter.circle_filled(disc_c, 2.6 * K, Color32::from_rgb(245, 250, 255));
             painter.circle_stroke(
                 disc_c,
-                3.4,
+                3.4 * K,
                 Stroke::new(1.0, Color32::from_rgba_unmultiplied(150, 200, 255, 150)),
             );
             // The donor star, over the start of the stream.
-            star(donor_c, 10.5, donor_col);
+            star(donor_c, 10.5 * K, donor_col);
         }
     }
     response
