@@ -1,9 +1,15 @@
 //! Load observations from delimited text files.
 //!
 //! This covers the BAA VSS database's CSV download, the AAVSO "download"
-//! format, and VStar's "simple" format (JD, magnitude, optional error and
-//! band, no header). Columns are found by name, so files with extra or
-//! reordered columns still load.
+//! format, the AAVSO Extended File Format (as written by ASTAP and other
+//! photometry programs), and VStar's "simple" format (JD, magnitude,
+//! optional error and band, no header). Columns are found by name, so files
+//! with extra or reordered columns still load.
+//!
+//! Extended-format files start with `#KEY=VALUE` lines; `#OBSCODE` and
+//! `#OBSTYPE` apply to every observation that doesn't have its own, and
+//! `#DELIM` gives the delimiter. Their column header line also starts with
+//! `#`, e.g. `#NAME<tab>DATE<tab>MAG<tab>MERR<tab>FILT...`.
 
 use std::path::Path;
 
@@ -36,6 +42,7 @@ const UT_DATE: &[&str] = &[
 ];
 const MAG: &[&str] = &["mag", "magnitude", "vmag", "mag."];
 const ERR: &[&str] = &[
+    "merr",
     "uncert",
     "uncertainty",
     "error",
@@ -46,7 +53,7 @@ const ERR: &[&str] = &[
     "e_mag",
     "magnitude error",
 ];
-const BAND: &[&str] = &["band", "filter", "fil", "passband"];
+const BAND: &[&str] = &["band", "filter", "filt", "fil", "passband"];
 const OBSERVER: &[&str] = &[
     "observer code",
     "observer",
@@ -77,26 +84,85 @@ pub fn load_file(path: &Path, source_label: &str) -> Result<Dataset> {
     Ok(ds)
 }
 
+/// Settings from `#KEY=VALUE` lines at the top of an Extended-format file.
+#[derive(Debug, Default)]
+struct Metadata {
+    obscode: Option<String>,
+    obs_type: Option<String>,
+    delimiter: Option<u8>,
+}
+
+/// Is this comment line (without its `#`) a column header rather than a
+/// note? It must be delimited and name both a date and a magnitude column.
+fn is_header_comment(text: &str) -> bool {
+    let delim = detect_delimiter(text);
+    let names: Vec<String> = text
+        .split(delim as char)
+        .map(|h| h.trim().to_ascii_lowercase())
+        .collect();
+    names.len() > 2
+        && names.iter().any(|n| MAG.contains(&n.as_str()))
+        && names
+            .iter()
+            .any(|n| JD.contains(&n.as_str()) || UT_DATE.contains(&n.as_str()))
+}
+
 /// Parse delimited text already in memory.
 pub fn parse(text: &str, source_label: &str) -> Result<Dataset> {
-    let lines: Vec<&str> = text
-        .lines()
-        .map(|l| l.trim_start_matches('\u{feff}'))
-        .filter(|l| {
-            let t = l.trim();
-            !t.is_empty() && !t.starts_with('#')
-        })
-        .collect();
+    let mut meta = Metadata::default();
+    let mut header_comment: Option<&str> = None;
+    let mut lines: Vec<&str> = Vec::new();
+
+    for line in text.lines().map(|l| l.trim_start_matches('\u{feff}')) {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        let Some(comment) = t.strip_prefix('#') else {
+            lines.push(line);
+            continue;
+        };
+        if header_comment.is_none() && lines.is_empty() && is_header_comment(comment) {
+            header_comment = Some(comment);
+        } else if let Some((key, value)) = comment.split_once('=') {
+            let value = value.trim();
+            if value.is_empty() {
+                continue;
+            }
+            match key.trim().to_ascii_uppercase().as_str() {
+                "OBSCODE" => meta.obscode = Some(value.to_string()),
+                "OBSTYPE" => meta.obs_type = Some(value.to_string()),
+                "DELIM" => {
+                    meta.delimiter = match value.to_ascii_lowercase().as_str() {
+                        "tab" => Some(b'\t'),
+                        "comma" | "," => Some(b','),
+                        "semicolon" | ";" => Some(b';'),
+                        "pipe" | "|" => Some(b'|'),
+                        _ => None,
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // The header comment, when there is one, becomes the first line.
+    if let Some(h) = header_comment {
+        lines.insert(0, h.trim_start());
+    }
     let first = *lines
         .first()
         .ok_or_else(|| Error::Parse("the file is empty".into()))?;
-    let delim = detect_delimiter(first);
+    let delim = meta.delimiter.unwrap_or_else(|| detect_delimiter(first));
     let body = lines.join("\n");
 
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(delim)
         .has_headers(false)
         .flexible(true)
+        // Tab-delimited files (ASTAP) hold free-text notes where a stray quote
+        // mark is not meant to start a quoted field.
+        .quoting(delim != b'\t')
         .trim(csv::Trim::All)
         .from_reader(body.as_bytes());
     let mut records = rdr.records();
@@ -104,7 +170,8 @@ pub fn parse(text: &str, source_label: &str) -> Result<Dataset> {
         .next()
         .ok_or_else(|| Error::Parse("the file is empty".into()))??;
 
-    let has_header = first_rec.get(0).is_some_and(|f| f.parse::<f64>().is_err());
+    let has_header =
+        header_comment.is_some() || first_rec.get(0).is_some_and(|f| f.parse::<f64>().is_err());
     let cols = if has_header {
         Columns::from_header(&first_rec)?
     } else {
@@ -123,7 +190,15 @@ pub fn parse(text: &str, source_label: &str) -> Result<Dataset> {
     for rec in pending.into_iter().chain(records) {
         let rec = rec?;
         match cols.observation(&rec) {
-            Some(ob) => observations.push(ob),
+            Some(mut ob) => {
+                if ob.observer.is_none() {
+                    ob.observer.clone_from(&meta.obscode);
+                }
+                if ob.obs_type.is_none() {
+                    ob.obs_type.clone_from(&meta.obs_type);
+                }
+                observations.push(ob);
+            }
             None => skipped += 1,
         }
         if star_name.is_empty()
@@ -159,6 +234,16 @@ fn detect_delimiter(line: &str) -> u8 {
         .max_by_key(|d| line.bytes().filter(|b| b == d).count())
         .filter(|d| line.as_bytes().contains(d))
         .unwrap_or(b',')
+}
+
+/// A "date" column holds a UT calendar date, except in files such as the
+/// AAVSO Extended Format that declare `#DATE=JD`: there a plain number that
+/// large is a Julian Date.
+fn parse_date_or_jd(s: &str) -> Option<f64> {
+    match s.parse::<f64>() {
+        Ok(jd) if jd >= 1_000_000.0 && jd.is_finite() => Some(jd),
+        _ => parse_ut_to_jd(s),
+    }
 }
 
 #[derive(Debug, Default)]
@@ -232,7 +317,7 @@ impl Columns {
 
         let jd = get(self.jd)
             .and_then(|s| s.parse::<f64>().ok())
-            .or_else(|| get(self.ut_date).and_then(parse_ut_to_jd))?;
+            .or_else(|| get(self.ut_date).and_then(parse_date_or_jd))?;
         let (mag, ft_prefix, uncertain) = parse_magnitude(rec.get(self.mag)?)?;
 
         let mut ob = Observation::new(
@@ -303,6 +388,40 @@ mod tests {
         assert_eq!(ds.star.name, "R Leo");
         assert_eq!(ds.observations[0].jd, 2451545.0);
         assert_eq!(ds.observations[0].band, "Vis.");
+    }
+
+    #[test]
+    fn reads_astap_extended_format_with_hash_header() {
+        let text = include_str!("../../tests/fixtures/astap_extended_t_crb.txt");
+        let ds = parse(text, "ASTAP file").unwrap();
+        assert_eq!(ds.star.name, "T CrB");
+        assert_eq!(ds.observations.len(), 14);
+        // Sorted by JD; the first row is the R measurement at 2461289.56664.
+        let first = &ds.observations[0];
+        assert_eq!(
+            (first.jd, first.mag, first.band.as_str()),
+            (2461289.56664, 8.429, "R")
+        );
+        assert_eq!(first.error, 0.1522);
+        // #OBSCODE and #OBSTYPE apply to rows that have no observer column.
+        assert_eq!(first.observer.as_deref(), Some("BSGA"));
+        assert_eq!(first.obs_type.as_deref(), Some("DSLR"));
+        let bands: std::collections::BTreeSet<_> =
+            ds.observations.iter().map(|o| o.band.as_str()).collect();
+        assert_eq!(bands.into_iter().collect::<Vec<_>>(), ["B", "R", "V"]);
+        assert!(
+            first
+                .comment
+                .as_deref()
+                .is_some_and(|c| c.starts_with("Transf corr."))
+        );
+    }
+
+    #[test]
+    fn hash_notes_are_not_mistaken_for_headers() {
+        let text = "# just a note, with, commas\n#OBSCODE=ABC\nJD,Mag,Band\n2459000.5,8.2,V\n";
+        let ds = parse(text, "x").unwrap();
+        assert_eq!(ds.observations[0].observer.as_deref(), Some("ABC"));
     }
 
     #[test]
