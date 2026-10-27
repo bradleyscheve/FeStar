@@ -510,6 +510,8 @@ pub enum StarLook {
     Binary,
     /// Nova and other accretion-disc systems: a star inside a disc.
     Nova,
+    /// Pulsating stars: a star with a halo and arrows showing it swell.
+    Pulsator,
 }
 
 const NOVA_CODES: &[&str] = &[
@@ -519,6 +521,13 @@ const NOVA_CODES: &[&str] = &[
 const BINARY_CODES: &[&str] = &[
     "E", "EA", "EB", "EW", "EC", "ELL", "D", "DM", "DS", "DW", "K", "KE", "KW", "SD", "GS", "WD",
     "WR", "XB", "RS", "R",
+];
+
+const PULSATOR_CODES: &[&str] = &[
+    "ACEP", "BCEP", "BCEPS", "BLAP", "CEP", "DCEP", "DCEPS", "CW", "CWA", "CWB", "DSCT", "DSCTC",
+    "HADS", "GDOR", "LPV", "M", "PUL", "PVTEL", "RPHS", "RR", "RRAB", "RRC", "RRD", "RV", "RVA",
+    "RVB", "SR", "SRA", "SRB", "SRC", "SRD", "SRS", "SXPHE", "V361HYA", "V1093HER", "ZZ", "ZZA",
+    "ZZB", "ZZO",
 ];
 
 /// Picks the look from the first code of a type string.
@@ -537,6 +546,8 @@ pub fn star_look(var_type: Option<&str>) -> StarLook {
         StarLook::Nova
     } else if BINARY_CODES.contains(&code.as_str()) {
         StarLook::Binary
+    } else if PULSATOR_CODES.contains(&code.as_str()) {
+        StarLook::Pulsator
     } else {
         StarLook::Single
     }
@@ -595,7 +606,10 @@ mod tests {
         assert_eq!(star_look(Some("EA/SD")), StarLook::Binary);
         assert_eq!(star_look(Some("NA")), StarLook::Nova);
         assert_eq!(star_look(Some("NR")), StarLook::Nova);
-        assert_eq!(star_look(Some("M")), StarLook::Single);
+        assert_eq!(star_look(Some("M")), StarLook::Pulsator);
+        assert_eq!(star_look(Some("RRC/BL:")), StarLook::Pulsator);
+        assert_eq!(star_look(Some("DCEP")), StarLook::Pulsator);
+        assert_eq!(star_look(Some("UV")), StarLook::Single);
         assert_eq!(star_look(None), StarLook::Single);
     }
 

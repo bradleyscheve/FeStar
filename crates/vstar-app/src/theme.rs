@@ -181,6 +181,8 @@ pub fn star_icon(
     use vstar_core::vartypes::StarLook;
     let size = if look == StarLook::Nova {
         Vec2::new(68.0 * NOVA_SCALE, 30.0 * NOVA_SCALE)
+    } else if look == StarLook::Pulsator {
+        Vec2::new(30.0, 28.0)
     } else {
         Vec2::new(40.0, 22.0)
     };
@@ -223,6 +225,26 @@ pub fn star_icon(
             let companion = base.lerp_to_gamma(Color32::from_rgb(255, 140, 60), 0.6);
             star(c + Vec2::new(5.5, 0.0), 4.0, companion);
             star(c + Vec2::new(-5.0, 0.0), 6.5, base);
+        }
+        StarLook::Pulsator => {
+            // The star with a faint halo, and four arrows pointing outward
+            // between the two to show it swelling and shrinking.
+            let ring = Color32::from_rgb(90, 105, 225);
+            painter.circle_filled(c, 12.5, ring.gamma_multiply(0.12));
+            painter.circle_stroke(c, 12.5, Stroke::new(1.2, ring.gamma_multiply(0.75)));
+            star(c, 5.0, base);
+            let arrow = Stroke::new(1.5, ui.visuals().strong_text_color());
+            for k in 0..4 {
+                let angle = std::f32::consts::FRAC_PI_4 + k as f32 * std::f32::consts::FRAC_PI_2;
+                let dir = Vec2::new(angle.cos(), -angle.sin());
+                let (from, tip) = (c + dir * 6.4, c + dir * 11.2);
+                painter.line_segment([from, tip], arrow);
+                for side in [-0.55_f32, 0.55] {
+                    let (s, co) = side.sin_cos();
+                    let back = Vec2::new(-dir.x * co + dir.y * s, -dir.y * co - dir.x * s);
+                    painter.line_segment([tip, tip + back * 3.4], arrow);
+                }
+            }
         }
         StarLook::Nova => {
             const K: f32 = NOVA_SCALE;
