@@ -1,0 +1,31 @@
+// Hide the console window on Windows release builds.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod app;
+mod light_curve;
+mod loader;
+mod theme;
+
+fn main() -> eframe::Result {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("VStar-RS")
+            .with_inner_size([1280.0, 800.0])
+            .with_min_inner_size([800.0, 500.0]),
+        // OpenGL is the fallback for machines whose graphics drivers don't
+        // work with the default (DirectX 12 / Vulkan) renderer.
+        renderer: if std::env::var_os("VSTAR_OPENGL").is_some() {
+            eframe::Renderer::Glow
+        } else {
+            eframe::Renderer::default()
+        },
+        ..Default::default()
+    };
+    // A file given on the command line (or via Windows "Open with") is loaded at startup.
+    let open_file = std::env::args_os().nth(1).map(std::path::PathBuf::from);
+    eframe::run_native(
+        "VStar-RS",
+        options,
+        Box::new(|cc| Ok(Box::new(app::VStarApp::new(cc, open_file)))),
+    )
+}

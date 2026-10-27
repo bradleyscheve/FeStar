@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-made fixture in the shape VStar's AID CSV parser expects; values are illustrative. -->
+<VSXObjects>
+  <VSXObject>
+    <Name>SS Cyg</Name>
+    <AUID>000-BCP-220</AUID>
+    <Data><![CDATA[obsID,JD,mag,uncert,fainterThan,band,by,obstype,comment,val
+1001,2460000.1,11.9,,0,Vis.,ABC,Visual,,V
+1002,2460000.2,12.05,0.012,0,V,XYZ,CCD,,Z
+1003,2460000.3,14.0,,1,Vis.,ABC,Visual,cloudy,T
+1004,,12.0,,0,V,BAD,CCD,,V
+]]></Data>
+  </VSXObject>
+  <Count>3</Count>
+</VSXObjects>

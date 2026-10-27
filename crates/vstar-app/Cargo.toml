@@ -1,0 +1,17 @@
+[package]
+name = "vstar-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vstar-rs"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.37.0", features = ["persistence", "glow"] }
+egui = "0.37"
+egui_plot = "0.38.0"
+rfd = "0.17.2"
+serde = { version = "1.0.229", features = ["derive"] }
+vstar-core = { version = "0.1.0", path = "../vstar-core" }
