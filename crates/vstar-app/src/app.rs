@@ -418,18 +418,39 @@ impl VStarApp {
                     for i in 0..self.slots.len() {
                         let selected = i == self.active;
                         let label = self.star_tab_label(i);
-                        let text = RichText::new(label).strong();
-                        if ui.selectable_label(selected, text).clicked() && !selected {
-                            switch_to = Some(i);
-                        }
-                        if ui
-                            .small_button("×")
-                            .on_hover_text("Close this star")
-                            .clicked()
-                        {
-                            close = Some(i);
-                        }
-                        ui.add_space(6.0);
+                        let visuals = ui.visuals();
+                        let fill = if selected {
+                            visuals.widgets.active.weak_bg_fill
+                        } else {
+                            visuals.widgets.inactive.weak_bg_fill
+                        };
+                        egui::Frame::new()
+                            .fill(fill)
+                            .corner_radius(6)
+                            .inner_margin(egui::Margin::symmetric(8, 3))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    let text = RichText::new(label).strong();
+                                    let text = if selected { text } else { text.weak() };
+                                    let name =
+                                        ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                                    if name.clicked() && !selected {
+                                        switch_to = Some(i);
+                                    }
+                                    if ui
+                                        .add(
+                                            egui::Button::new(RichText::new("×").weak())
+                                                .frame(false)
+                                                .small(),
+                                        )
+                                        .on_hover_text("Close this star")
+                                        .clicked()
+                                    {
+                                        close = Some(i);
+                                    }
+                                });
+                            });
+                        ui.add_space(2.0);
                     }
                 });
             });
@@ -438,6 +459,35 @@ impl VStarApp {
         } else if let Some(i) = switch_to {
             self.activate(i);
         }
+    }
+
+    /// A button that sends the star's position to Stellarium or N.I.N.A.
+    fn external_button(
+        task: &mut Option<Task<String>>,
+        apps: &ExternalApps,
+        ui: &mut egui::Ui,
+        program: Program,
+        icon: theme::Icon,
+        tip: &str,
+        position: Option<(f64, f64)>,
+    ) {
+        ui.horizontal(|ui| {
+            theme::icon(ui, icon);
+            let label = match program {
+                Program::Stellarium => "Stellarium",
+                Program::Nina => "NINA",
+            };
+            let busy = task.is_some();
+            let response = ui.add_enabled(!busy && position.is_some(), egui::Button::new(label));
+            let response = if position.is_some() {
+                response.on_hover_text(tip)
+            } else {
+                response.on_disabled_hover_text("This star's position isn't known")
+            };
+            if let (true, Some((ra, dec))) = (response.clicked(), position) {
+                *task = Some(external::open(ui.ctx(), program, apps, ra, dec));
+            }
+        });
     }
 
     fn poll_external(&mut self) {
@@ -754,59 +804,54 @@ impl VStarApp {
                         row("JD range", Some(format!("{a:.1} – {b:.1}")));
                     }
                 });
-            ui.horizontal(|ui| {
-                theme::icon(ui, theme::Icon::StarChart);
-                if ui.button("VSP").clicked() {
-                    self.vsp.open(ui.ctx(), &ds.star.name);
-                }
-            });
-            if let (Some(ra), Some(dec)) = (ds.star.ra_deg, ds.star.dec_deg) {
-                for (program, icon, label, tip) in [
-                    (
-                        Program::Stellarium,
-                        theme::Icon::Moon,
-                        "Stellarium",
-                        "Centre Stellarium on this star (needs its Remote Control plugin)",
-                    ),
-                    (
-                        Program::Nina,
-                        theme::Icon::Telescope,
-                        "NINA",
-                        "Open this star in N.I.N.A.'s framing tool (needs the Advanced API plugin)",
-                    ),
-                ] {
+            let position = ds.star.ra_deg.zip(ds.star.dec_deg);
+            let has_name = !ds.star.name.trim().is_empty();
+            egui::Grid::new("star_links")
+                .num_columns(2)
+                .spacing([14.0, 6.0])
+                .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        theme::icon(ui, icon);
-                        let busy = self.external_task.is_some();
-                        if ui
-                            .add_enabled(!busy, egui::Button::new(label))
-                            .on_hover_text(tip)
-                            .clicked()
-                        {
-                            self.external_task = Some(external::open(
-                                ui.ctx(),
-                                program,
-                                &self.settings.external,
-                                ra,
-                                dec,
-                            ));
+                        theme::icon(ui, theme::Icon::StarChart);
+                        if ui.button("VSP").clicked() {
+                            self.vsp.open(ui.ctx(), &ds.star.name);
                         }
                     });
-                }
-            }
-            if !ds.star.name.trim().is_empty() {
-                ui.horizontal(|ui| {
-                    theme::icon(ui, theme::Icon::Book);
-                    if ui
-                        .button("VSX")
-                        .on_hover_text("Open this star on AAVSO VSX in your browser")
-                        .clicked()
-                    {
-                        ui.ctx()
-                            .open_url(egui::OpenUrl::new_tab(aavso::vsx_page_url(&ds.star.name)));
-                    }
+                    Self::external_button(
+                        &mut self.external_task,
+                        &self.settings.external,
+                        ui,
+                        Program::Stellarium,
+                        theme::Icon::Moon,
+                        "Centre Stellarium on this star (needs its Remote Control plugin)",
+                        position,
+                    );
+                    ui.end_row();
+                    ui.horizontal(|ui| {
+                        if has_name {
+                            theme::icon(ui, theme::Icon::Book);
+                            if ui
+                                .button("VSX")
+                                .on_hover_text("Open this star on AAVSO VSX in your browser")
+                                .clicked()
+                            {
+                                ui.ctx()
+                                    .open_url(egui::OpenUrl::new_tab(aavso::vsx_page_url(
+                                        &ds.star.name,
+                                    )));
+                            }
+                        }
+                    });
+                    Self::external_button(
+                        &mut self.external_task,
+                        &self.settings.external,
+                        ui,
+                        Program::Nina,
+                        theme::Icon::Telescope,
+                        "Open this star in N.I.N.A.'s framing tool (needs the Advanced API plugin)",
+                        position,
+                    );
+                    ui.end_row();
                 });
-            }
         });
 
         ui.add_space(8.0);
