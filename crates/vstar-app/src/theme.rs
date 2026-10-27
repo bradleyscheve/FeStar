@@ -1,9 +1,9 @@
 //! A calmer, more modern look than egui's defaults: roomier spacing,
-//! rounder corners and a single accent colour.
+//! rounder corners and a neutral grey palette.
 
 use egui::{Color32, CornerRadius, Margin, Stroke, Theme, Vec2};
 
-pub const ACCENT: Color32 = Color32::from_rgb(0x4f, 0x8c, 0xff);
+pub const ACCENT: Color32 = Color32::from_rgb(0x9a, 0x9a, 0x9a);
 
 pub fn install(ctx: &egui::Context) {
     for theme in [Theme::Dark, Theme::Light] {
@@ -29,18 +29,22 @@ pub fn install(ctx: &egui::Context) {
             v.selection.bg_fill =
                 ACCENT.gamma_multiply(if theme == Theme::Dark { 0.6 } else { 0.35 });
             v.selection.stroke = Stroke::new(1.0, ACCENT);
-            v.hyperlink_color = ACCENT;
+            v.hyperlink_color = if theme == Theme::Dark {
+                Color32::from_rgb(0xd0, 0xd0, 0xd0)
+            } else {
+                Color32::from_rgb(0x40, 0x40, 0x40)
+            };
 
             if theme == Theme::Dark {
-                v.panel_fill = Color32::from_rgb(0x16, 0x18, 0x1d);
-                v.window_fill = Color32::from_rgb(0x1c, 0x1f, 0x26);
-                v.extreme_bg_color = Color32::from_rgb(0x10, 0x12, 0x16);
-                v.faint_bg_color = Color32::from_rgb(0x20, 0x23, 0x2b);
+                v.panel_fill = Color32::from_rgb(0x1e, 0x1e, 0x1e);
+                v.window_fill = Color32::from_rgb(0x26, 0x26, 0x26);
+                v.extreme_bg_color = Color32::from_rgb(0x16, 0x16, 0x16);
+                v.faint_bg_color = Color32::from_rgb(0x2a, 0x2a, 0x2a);
             } else {
-                v.panel_fill = Color32::from_rgb(0xf5, 0xf6, 0xf8);
+                v.panel_fill = Color32::from_rgb(0xf0, 0xf0, 0xf0);
                 v.window_fill = Color32::WHITE;
                 v.extreme_bg_color = Color32::WHITE;
-                v.faint_bg_color = Color32::from_rgb(0xec, 0xee, 0xf2);
+                v.faint_bg_color = Color32::from_rgb(0xe4, 0xe4, 0xe4);
             }
         });
     }
