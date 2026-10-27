@@ -375,6 +375,9 @@ impl VStarApp {
                 "Frequency (cycles/day)"
             })
             .y_axis_label("Power")
+            // Zooming stretches the frequency axis only; power stays in view.
+            .allow_zoom([true, false])
+            .allow_scroll([true, false])
             .show(ui, |plot_ui| {
                 plot_ui.line(
                     Line::new("Power", PlotPoints::new(line))

@@ -9,6 +9,13 @@ pub trait HttpClient: Send + Sync {
     /// Fetch `url` and return the response body as text.
     fn get_text(&self, url: &str) -> Result<String>;
 
+    /// Fetch `url` and return the response body as raw bytes (images).
+    fn get_bytes(&self, _url: &str) -> Result<Vec<u8>> {
+        Err(Error::Network(
+            "this HTTP client can't download binary files".into(),
+        ))
+    }
+
     /// POST a JSON `body` to `url` with extra `headers` and return the
     /// response body. On an error status the returned error includes the
     /// server's explanation, which AI providers use for "invalid API key"
@@ -51,6 +58,23 @@ impl HttpClient for ReqwestClient {
             )));
         }
         resp.text().map_err(|e| Error::Network(e.to_string()))
+    }
+
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>> {
+        let resp = self
+            .inner
+            .get(url)
+            .send()
+            .map_err(|e| Error::Network(e.to_string()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(Error::Network(format!(
+                "server answered {status} for {url}"
+            )));
+        }
+        resp.bytes()
+            .map(|b| b.to_vec())
+            .map_err(|e| Error::Network(e.to_string()))
     }
 
     fn post_json(&self, url: &str, headers: &[(&str, &str)], body: &str) -> Result<String> {

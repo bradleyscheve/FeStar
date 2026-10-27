@@ -11,6 +11,7 @@ use crate::loader::{Job, Request};
 use crate::phase_ui::PhaseState;
 use crate::prefs::{PrefsState, Secrets};
 use crate::search_ui::SearchState;
+use crate::vsp_ui::VspState;
 use crate::{light_curve, theme};
 
 const BAA_DATABASE_URL: &str = "https://britastro.org/vssdb/data.php";
@@ -127,6 +128,7 @@ pub struct VStarApp {
     pub(crate) phase: PhaseState,
     pub(crate) search: SearchState,
     pub(crate) prefs: PrefsState,
+    vsp: VspState,
     secrets: Secrets,
 }
 
@@ -163,6 +165,7 @@ impl VStarApp {
             phase: PhaseState::default(),
             search: SearchState::default(),
             prefs: PrefsState::default(),
+            vsp: VspState::default(),
             secrets: Secrets::new(),
         }
     }
@@ -484,6 +487,9 @@ impl VStarApp {
                         row("JD range", Some(format!("{a:.1} – {b:.1}")));
                     }
                 });
+            if ui.button("VSP").clicked() {
+                self.vsp.open(ui.ctx(), &ds.star.name);
+            }
             if ds.star.auid.is_some() {
                 ui.hyperlink_to("View on VSX ↗", aavso::vsx_page_url(&ds.star.name));
             }
@@ -608,6 +614,7 @@ impl eframe::App for VStarApp {
         self.poll_search();
         self.poll_phase_ai();
         let ctx = ui.ctx().clone();
+        self.vsp.show(&ctx);
         self.show_phase_dialog(&ctx);
         self.show_search_dialog(&ctx);
         self.prefs.show(&ctx, &mut self.settings.ai, &self.secrets);

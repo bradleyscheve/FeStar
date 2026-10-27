@@ -9,6 +9,7 @@ mod prefs;
 mod search_ui;
 mod task;
 mod theme;
+mod vsp_ui;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {

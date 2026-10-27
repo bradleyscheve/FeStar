@@ -4293,6 +4293,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_plot",
+ "image",
  "rfd",
  "serde",
  "vstar-core",

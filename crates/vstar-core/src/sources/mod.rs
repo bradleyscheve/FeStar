@@ -2,6 +2,7 @@
 
 pub mod aavso;
 pub mod csv_import;
+pub mod vsp;
 
 /// Called as pages of data arrive with `(loaded so far, expected total)`.
 /// Return `false` to cancel the load.
