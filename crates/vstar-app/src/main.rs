@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod app_icon;
 mod light_curve;
 mod loader;
 mod phase_ui;
@@ -16,6 +17,7 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("FeStar")
+            .with_icon(std::sync::Arc::new(app_icon::icon(256)))
             .with_inner_size([1280.0, 800.0])
             .with_min_inner_size([800.0, 500.0]),
         // OpenGL is the fallback for machines whose graphics drivers don't
