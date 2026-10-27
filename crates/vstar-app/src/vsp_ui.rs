@@ -13,6 +13,7 @@ type Fetched = (Chart, egui::ColorImage);
 pub struct VspState {
     open: bool,
     star: String,
+    fov: f64,
     task: Option<Task<Fetched>>,
     chart: Option<Chart>,
     texture: Option<TextureHandle>,
@@ -24,13 +25,17 @@ impl VspState {
     pub fn open(&mut self, ctx: &Context, star: &str) {
         self.open = true;
         self.star = star.to_string();
+        if self.fov <= 0.0 {
+            self.fov = vsp::DEFAULT_FOV;
+        }
+        let fov = self.fov;
         self.chart = None;
         self.texture = None;
         self.error = None;
         let name = star.to_string();
         self.task = Some(Task::spawn(ctx, "Downloading VSP chart", move |_| {
             let http = ReqwestClient::new()?;
-            let (chart, bytes) = vsp::fetch_chart(&http, &name)?;
+            let (chart, bytes) = vsp::fetch_chart(&http, &name, fov)?;
             let img = image::load_from_memory(&bytes)
                 .map_err(|e| Error::Network(format!("couldn't read the chart image: {e}")))?
                 .to_rgba8();
@@ -68,6 +73,21 @@ impl VspState {
             .default_size([620.0, 680.0])
             .resizable(true)
             .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Chart size");
+                    let before = self.fov;
+                    egui::ComboBox::from_id_salt("vsp_fov")
+                        .selected_text(format!("{} arcmin", self.fov))
+                        .show_ui(ui, |ui| {
+                            for f in vsp::FOVS {
+                                ui.selectable_value(&mut self.fov, f, format!("{f} arcmin"));
+                            }
+                        });
+                    if self.fov != before {
+                        let star = self.star.clone();
+                        self.open(ctx, &star);
+                    }
+                });
                 if self.task.is_some() {
                     ui.horizontal(|ui| {
                         ui.spinner();
@@ -85,7 +105,7 @@ impl VspState {
                 if let Some(chart) = &self.chart {
                     ui.label(format!(
                         "Field of view {} arcmin, comparison stars to magnitude {}. Chart {}.",
-                        vsp::DEFAULT_FOV,
+                        self.fov,
                         vsp::DEFAULT_MAG_LIMIT,
                         chart.chart_id
                     ));

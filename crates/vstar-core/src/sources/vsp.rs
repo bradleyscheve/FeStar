@@ -12,7 +12,9 @@ use crate::{Error, Result};
 const API_URL: &str = "https://apps.aavso.org/vsp/api/chart/";
 
 /// Field of view of the chart, in arcminutes (the unit VSP uses).
-pub const DEFAULT_FOV: u32 = 60;
+pub const DEFAULT_FOV: f64 = 60.0;
+/// The chart sizes offered to the user, in arcminutes.
+pub const FOVS: [f64; 8] = [7.5, 15.0, 30.0, 60.0, 120.0, 240.0, 480.0, 900.0];
 /// Faintest comparison star magnitude to label.
 pub const DEFAULT_MAG_LIMIT: f64 = 14.5;
 
@@ -24,7 +26,7 @@ pub struct Chart {
     pub page_url: String,
 }
 
-pub fn chart_request_url(star_name: &str, fov: u32, mag_limit: f64) -> String {
+pub fn chart_request_url(star_name: &str, fov: f64, mag_limit: f64) -> String {
     format!(
         "{API_URL}?format=json&star={}&fov={fov}&maglimit={mag_limit}",
         encode_query_value(star_name)
@@ -53,12 +55,8 @@ pub fn parse_chart(json: &str) -> Result<Chart> {
 }
 
 /// Ask VSP for a chart of `star_name` and download its image.
-pub fn fetch_chart(http: &dyn HttpClient, star_name: &str) -> Result<(Chart, Vec<u8>)> {
-    let json = http.get_text(&chart_request_url(
-        star_name,
-        DEFAULT_FOV,
-        DEFAULT_MAG_LIMIT,
-    ))?;
+pub fn fetch_chart(http: &dyn HttpClient, star_name: &str, fov: f64) -> Result<(Chart, Vec<u8>)> {
+    let json = http.get_text(&chart_request_url(star_name, fov, DEFAULT_MAG_LIMIT))?;
     let chart = parse_chart(&json)?;
     let image = http.get_bytes(&chart.image_url)?;
     Ok((chart, image))
@@ -71,9 +69,10 @@ mod tests {
     #[test]
     fn builds_request() {
         assert_eq!(
-            chart_request_url("SS Cyg", 60, 14.5),
+            chart_request_url("SS Cyg", 60.0, 14.5),
             "https://apps.aavso.org/vsp/api/chart/?format=json&star=SS+Cyg&fov=60&maglimit=14.5"
         );
+        assert!(chart_request_url("X", 7.5, 14.5).contains("fov=7.5"));
     }
 
     #[test]

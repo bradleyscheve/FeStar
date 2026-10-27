@@ -490,7 +490,7 @@ impl VStarApp {
             if ui.button("VSP").clicked() {
                 self.vsp.open(ui.ctx(), &ds.star.name);
             }
-            if ds.star.auid.is_some() {
+            if !ds.star.name.trim().is_empty() {
                 ui.hyperlink_to("View on VSX ↗", aavso::vsx_page_url(&ds.star.name));
             }
         });
