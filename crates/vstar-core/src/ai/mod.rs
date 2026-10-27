@@ -244,13 +244,20 @@ impl AiClient<'_> {
                 (
                     format!("{}/chat/completions", self.config.base_url()),
                     headers,
-                    json!({
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": system},
-                            {"role": "user", "content": user},
-                        ],
-                    }),
+                    {
+                        let mut body = json!({
+                            "model": model,
+                            "messages": [
+                                {"role": "system", "content": system},
+                                {"role": "user", "content": user},
+                            ],
+                        });
+                        // Nous Portal rejects requests that don't say which product sent them.
+                        if self.config.provider == Provider::NousPortal {
+                            body["tags"] = json!(["product=vstar-rs"]);
+                        }
+                        body
+                    },
                 )
             }
         };
@@ -526,6 +533,8 @@ mod tests {
             http.sent.lock().unwrap()[1].0,
             "https://inference-api.nousresearch.com/v1/chat/completions"
         );
+        assert!(http.sent.lock().unwrap()[1].2.contains("\"tags\""));
+        assert!(!http.sent.lock().unwrap()[0].2.contains("\"tags\""));
         let no_key = AiClient {
             http: &http,
             config: &cfg,
