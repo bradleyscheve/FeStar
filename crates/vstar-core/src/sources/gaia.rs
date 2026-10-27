@@ -105,18 +105,24 @@ pub fn pick_source(csv_text: &str) -> Result<u64> {
             "the Gaia archive's answer had no source_id column".into(),
         ));
     };
-    let mut found_any = false;
+    let mut nearest: Option<(String, String)> = None;
     for record in rdr.records().flatten() {
-        found_any = true;
+        if nearest.is_none() {
+            nearest = Some((
+                record.get(id_col).unwrap_or("?").to_string(),
+                record.get(flag_col).unwrap_or("?").to_string(),
+            ));
+        }
         let has = record.get(flag_col).is_some_and(truthy);
         if let (true, Some(id)) = (has, record.get(id_col).and_then(|s| s.parse().ok())) {
             return Ok(id);
         }
     }
-    Err(Error::Analysis(if found_any {
-        "Gaia DR3 has this star but no epoch photometry for it (only stars Gaia classified as variable have it).".into()
-    } else {
-        "No Gaia DR3 source was found at this star's position.".into()
+    Err(Error::Analysis(match nearest {
+        Some((id, flag)) => format!(
+            "Gaia DR3 {id} is at this star's position, but the archive says it has no epoch photometry (has_epoch_photometry = {flag}). Only stars Gaia classified as variable have it, and very bright stars are often missing."
+        ),
+        None => "No Gaia DR3 source was found at this star's position.".into(),
     }))
 }
 
