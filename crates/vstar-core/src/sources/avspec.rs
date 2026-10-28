@@ -144,7 +144,7 @@ pub fn search(http: &dyn HttpClient, name: &str) -> Result<Vec<SpectrumRow>> {
 /// A short description of a reply that isn't a FITS file, for error messages.
 fn describe_reply(bytes: &[u8]) -> String {
     if bytes.starts_with(b"PK") {
-        return "a zip file".into();
+        return "a zip file with no FITS spectrum in it".into();
     }
     let text = String::from_utf8_lossy(&bytes[..bytes.len().min(6000)]);
     if text.contains("<html") || text.contains("<!DOCTYPE") || text.contains("<!doctype") {
@@ -167,14 +167,41 @@ fn describe_reply(bytes: &[u8]) -> String {
     format!("{} bytes of something else", bytes.len())
 }
 
+/// The FITS file in a reply: the reply itself, or the first FITS file inside
+/// a zip (AVSpec sends its downloads zipped).
+fn fits_from(bytes: Vec<u8>) -> std::result::Result<Vec<u8>, Vec<u8>> {
+    use std::io::Read;
+    if bytes.starts_with(b"SIMPLE") {
+        return Ok(bytes);
+    }
+    if !bytes.starts_with(b"PK") {
+        return Err(bytes);
+    }
+    let found = (|| {
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).ok()?;
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).ok()?;
+            let mut data = Vec::new();
+            if !entry.is_dir()
+                && entry.read_to_end(&mut data).is_ok()
+                && data.starts_with(b"SIMPLE")
+            {
+                return Some(data);
+            }
+        }
+        None
+    })();
+    found.ok_or(bytes)
+}
+
 /// Download one spectrum's FITS file. AVSpec's own Download button submits
 /// the search form with the spectrum's id, so that is tried if the direct
 /// address doesn't give a FITS file.
 pub fn download(http: &dyn HttpClient, id: u64) -> Result<Vec<u8>> {
     let mut problems = Vec::new();
-    match http.get_bytes(&spectra::download_url(id)) {
-        Ok(bytes) if bytes.starts_with(b"SIMPLE") => return Ok(bytes),
-        Ok(bytes) => problems.push(format!(
+    match http.get_bytes(&spectra::download_url(id)).map(fits_from) {
+        Ok(Ok(fits)) => return Ok(fits),
+        Ok(Err(bytes)) => problems.push(format!(
             "the direct address gave {}",
             describe_reply(&bytes)
         )),
@@ -187,13 +214,18 @@ pub fn download(http: &dyn HttpClient, id: u64) -> Result<Vec<u8>> {
             ("csrfmiddlewaretoken", token.as_str()),
             ("specids", id_text.as_str()),
         ];
-        match http.post_form_bytes_with_headers(
-            SEARCH_URL,
-            &fields,
-            &[("Referer", SEARCH_URL), ("Origin", ORIGIN)],
-        ) {
-            Ok(bytes) if bytes.starts_with(b"SIMPLE") => return Ok(bytes),
-            Ok(bytes) => problems.push(format!("the search form gave {}", describe_reply(&bytes))),
+        match http
+            .post_form_bytes_with_headers(
+                SEARCH_URL,
+                &fields,
+                &[("Referer", SEARCH_URL), ("Origin", ORIGIN)],
+            )
+            .map(fits_from)
+        {
+            Ok(Ok(fits)) => return Ok(fits),
+            Ok(Err(bytes)) => {
+                problems.push(format!("the search form gave {}", describe_reply(&bytes)))
+            }
             Err(e) => problems.push(format!("the search form failed ({e})")),
         }
     }
@@ -329,5 +361,24 @@ mod real_page {
         assert_eq!(rows.len(), 25);
         assert_eq!(rows[0].id, 19915);
         assert!(super::parse_csrf(&html).is_some());
+    }
+
+    #[test]
+    fn reads_a_fits_file_out_of_a_zip() {
+        use std::io::Write;
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            zip.start_file("a.fits", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(b"SIMPLE  =                    T").unwrap();
+            zip.finish().unwrap();
+        }
+        assert_eq!(
+            super::fits_from(buf).unwrap(),
+            b"SIMPLE  =                    T"
+        );
+        assert!(super::fits_from(b"<html>".to_vec()).is_err());
+        assert!(super::fits_from(b"SIMPLE".to_vec()).is_ok());
     }
 }
