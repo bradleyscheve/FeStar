@@ -226,6 +226,41 @@ pub fn star_icon(
             star(c + Vec2::new(5.5, 0.0), 4.0, companion);
             star(c + Vec2::new(-5.0, 0.0), 6.5, base);
         }
+        StarLook::Contact => {
+            // Two stars stretched toward each other, overlapping so they
+            // touch at a narrow waist. The dark rim is drawn first, slightly
+            // larger, so it outlines the joined shape rather than each star.
+            let parts = [(-6.5_f32, 8.5_f32, 7.0_f32), (6.5, 8.5, 7.0)];
+            let ellipse = |cx: f32, rx: f32, ry: f32| -> Vec<egui::Pos2> {
+                (0..40)
+                    .map(|i| {
+                        let a = i as f32 / 40.0 * std::f32::consts::TAU;
+                        c + Vec2::new(cx + a.cos() * rx, a.sin() * ry)
+                    })
+                    .collect()
+            };
+            for (cx, rx, ry) in parts {
+                painter.add(egui::Shape::convex_polygon(
+                    ellipse(cx, rx + 0.9, ry + 0.9),
+                    rim,
+                    Stroke::NONE,
+                ));
+            }
+            for (cx, rx, ry) in parts {
+                painter.add(egui::Shape::convex_polygon(
+                    ellipse(cx, rx, ry),
+                    base,
+                    Stroke::NONE,
+                ));
+            }
+            for cx in [-8.0_f32, 8.0] {
+                painter.circle_filled(
+                    c + Vec2::new(cx, -2.5),
+                    2.2,
+                    base.lerp_to_gamma(Color32::WHITE, 0.6),
+                );
+            }
+        }
         StarLook::Pulsator => {
             // The star with a faint halo, and four arrows pointing outward
             // between the two to show it swelling and shrinking.

@@ -508,6 +508,8 @@ pub fn explain(var_type: &str) -> String {
 pub enum StarLook {
     Single,
     Binary,
+    /// Contact binaries: two stars stretched toward each other and touching.
+    Contact,
     /// Nova and other accretion-disc systems: a star inside a disc.
     Nova,
     /// Pulsating stars: a star with a halo and arrows showing it swell.
@@ -519,9 +521,11 @@ const NOVA_CODES: &[&str] = &[
     "AM", "DQ", "IP", "CV",
 ];
 const BINARY_CODES: &[&str] = &[
-    "E", "EA", "EB", "EW", "EC", "ELL", "D", "DM", "DS", "DW", "K", "KE", "KW", "SD", "GS", "WD",
-    "WR", "XB", "RS", "R",
+    "E", "EA", "EB", "EC", "ELL", "D", "DM", "DS", "DW", "K", "KE", "SD", "GS", "WD", "WR", "XB",
+    "RS", "R",
 ];
+
+const CONTACT_CODES: &[&str] = &["EW", "KW"];
 
 const PULSATOR_CODES: &[&str] = &[
     "ACEP", "BCEP", "BCEPS", "BLAP", "CEP", "DCEP", "DCEPS", "CW", "CWA", "CWB", "DSCT", "DSCTC",
@@ -544,6 +548,8 @@ pub fn star_look(var_type: Option<&str>) -> StarLook {
         .to_ascii_uppercase();
     if NOVA_CODES.contains(&code.as_str()) {
         StarLook::Nova
+    } else if CONTACT_CODES.contains(&code.as_str()) {
+        StarLook::Contact
     } else if BINARY_CODES.contains(&code.as_str()) {
         StarLook::Binary
     } else if PULSATOR_CODES.contains(&code.as_str()) {
@@ -604,6 +610,7 @@ mod tests {
     #[test]
     fn looks() {
         assert_eq!(star_look(Some("EA/SD")), StarLook::Binary);
+        assert_eq!(star_look(Some("EW")), StarLook::Contact);
         assert_eq!(star_look(Some("NA")), StarLook::Nova);
         assert_eq!(star_look(Some("NR")), StarLook::Nova);
         assert_eq!(star_look(Some("M")), StarLook::Pulsator);
