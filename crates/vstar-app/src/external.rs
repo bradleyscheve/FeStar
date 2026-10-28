@@ -80,43 +80,95 @@ pub fn open(
     })
 }
 
+/// Where a program is usually installed on Windows, tried when no location
+/// has been set in Preferences.
+fn default_path(program: Program) -> Option<String> {
+    let candidates: &[&str] = match program {
+        Program::Stellarium => &["C:\\Program Files\\Stellarium\\stellarium.exe"],
+        Program::Nina => &[
+            "C:\\Program Files\\N.I.N.A. - Nighttime Imaging 'N' Astronomy\\NINA.exe",
+            "C:\\Program Files (x86)\\N.I.N.A. - Nighttime Imaging 'N' Astronomy\\NINA.exe",
+        ],
+    };
+    candidates
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())
+        .map(|p| p.to_string())
+}
+
+/// How long to wait for a program we started to begin answering.
+const START_WAIT: std::time::Duration = std::time::Duration::from_secs(90);
+
+fn try_send(
+    http: &ReqwestClient,
+    program: Program,
+    apps: &ExternalApps,
+    ra_deg: f64,
+    dec_deg: f64,
+) -> Result<()> {
+    match program {
+        Program::Stellarium => open_in_stellarium(http, apps.stellarium_port, ra_deg, dec_deg),
+        Program::Nina => open_in_nina(http, apps.nina_port, ra_deg, dec_deg),
+    }
+}
+
 fn send(program: Program, apps: &ExternalApps, ra_deg: f64, dec_deg: f64) -> Result<String> {
     let http = ReqwestClient::new()?;
-    let result = match program {
-        Program::Stellarium => open_in_stellarium(&http, apps.stellarium_port, ra_deg, dec_deg),
-        Program::Nina => open_in_nina(&http, apps.nina_port, ra_deg, dec_deg),
-    };
     let name = program.name();
-    match result {
-        Ok(()) => Ok(format!(
+    let sent = || {
+        format!(
             "Sent {} {} to {name}.",
             planetarium::ra_hms(ra_deg),
             planetarium::dec_dms(dec_deg)
-        )),
-        Err(e) if server_answered(&e) => Err(Error::Analysis(format!(
+        )
+    };
+    let answered_with_error = |e: &Error| {
+        Error::Analysis(format!(
             "{name} answered with an error ({e}). {}",
             program.setup_hint()
-        ))),
-        Err(e @ Error::Analysis(_)) => Err(e),
-        Err(_) => {
-            // Nothing is listening: start the program if we know where it is.
-            let path = match program {
-                Program::Stellarium => &apps.stellarium_path,
-                Program::Nina => &apps.nina_path,
-            };
-            if path.trim().is_empty() {
+        ))
+    };
+    match try_send(&http, program, apps, ra_deg, dec_deg) {
+        Ok(()) => return Ok(sent()),
+        Err(e) if server_answered(&e) => return Err(answered_with_error(&e)),
+        Err(e @ Error::Analysis(_)) => return Err(e),
+        Err(_) => {}
+    }
+    // Nothing is listening: start the program, then keep trying until it is
+    // ready to take the position.
+    let configured = match program {
+        Program::Stellarium => &apps.stellarium_path,
+        Program::Nina => &apps.nina_path,
+    };
+    let path = if configured.trim().is_empty() {
+        default_path(program).unwrap_or_default()
+    } else {
+        configured.trim().to_string()
+    };
+    if path.is_empty() {
+        return Err(Error::Analysis(format!(
+            "Couldn't reach {name}, and I don't know where it is installed. Start it, or set its \
+             location in File > Preferences. {}",
+            program.setup_hint()
+        )));
+    }
+    std::process::Command::new(&path)
+        .spawn()
+        .map_err(|e| Error::Analysis(format!("Couldn't start {name} ({path}): {e}")))?;
+    let started = std::time::Instant::now();
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        match try_send(&http, program, apps, ra_deg, dec_deg) {
+            Ok(()) => return Ok(sent()),
+            Err(e) if server_answered(&e) => return Err(answered_with_error(&e)),
+            Err(e @ Error::Analysis(_)) => return Err(e),
+            Err(_) if started.elapsed() < START_WAIT => {}
+            Err(_) => {
                 return Err(Error::Analysis(format!(
-                    "Couldn't reach {name}. Start it, or set its location in File > Preferences. {}",
+                    "Started {name}, but it never started answering. {}",
                     program.setup_hint()
                 )));
             }
-            std::process::Command::new(path.trim())
-                .spawn()
-                .map_err(|e| Error::Analysis(format!("Couldn't start {name} ({path}): {e}")))?;
-            Ok(format!(
-                "Started {name}. When it has finished opening, click the button again. {}",
-                program.setup_hint()
-            ))
         }
     }
 }
