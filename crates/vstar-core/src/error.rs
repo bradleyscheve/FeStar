@@ -15,6 +15,15 @@ pub enum Error {
     #[error("file error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("AI request failed: {0}")]
+    Ai(String),
+
+    #[error("couldn't use the system credential store: {0}")]
+    Secret(String),
+
+    #[error("{0}")]
+    Analysis(String),
+
     #[error("loading was cancelled")]
     Cancelled,
 }

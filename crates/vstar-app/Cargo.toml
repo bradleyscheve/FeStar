@@ -1,11 +1,12 @@
 [package]
+build = "build.rs"
 name = "vstar-app"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "vstar-rs"
+name = "festar"
 path = "src/main.rs"
 
 [dependencies]
@@ -15,3 +16,10 @@ egui_plot = "0.38.0"
 rfd = "0.17.2"
 serde = { version = "1.0.229", features = ["derive"] }
 vstar-core = { version = "0.1.0", path = "../vstar-core" }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[build-dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

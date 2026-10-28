@@ -1,8 +1,10 @@
 //! The light curve plot: magnitude against Julian Date, brighter at the top.
+//! The same plot also draws a phase plot, where the x axis is phase.
 
 use std::collections::HashSet;
 
 use egui_plot::{HoverPosition, Legend, Line, MarkerShape, Plot, PlotPoints, Points};
+use vstar_core::analysis::phase;
 use vstar_core::{Dataset, Validation, bands, time};
 
 use crate::theme;
@@ -10,19 +12,55 @@ use crate::theme;
 /// Error bars are drawn one line each, so skip them for huge datasets.
 const MAX_ERROR_BARS: usize = 5_000;
 
+/// What the x axis shows.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Mode {
+    Time,
+    /// Observations folded at `period` about `epoch`. With `two_cycles`
+    /// the previous cycle is drawn too (phase - 1), as in VStar.
+    Phase {
+        epoch: f64,
+        period: f64,
+        two_cycles: bool,
+    },
+}
+
 pub struct Options<'a> {
+    pub mode: Mode,
     pub hidden_bands: &'a HashSet<String>,
     pub show_discrepant: bool,
     pub show_fainter_than: bool,
     pub show_errors: bool,
+    /// Label the time axis with calendar dates instead of Julian Dates.
+    pub calendar_axis: bool,
     pub reset_view: bool,
+    /// A model curve to draw over the observations (time plots only).
+    pub overlay: Option<&'a [[f64; 2]]>,
 }
 
-/// One plotted series and which observations its points came from, so the
+/// One plotted series and which observation each point came from, so the
 /// hover label can describe the observation under the cursor.
 struct Series {
     name: String,
     obs: Vec<usize>,
+    /// The x value of each point (JD or phase).
+    x: Vec<f64>,
+}
+
+/// The x values at which observation `o` is drawn.
+fn x_positions(mode: Mode, jd: f64) -> impl Iterator<Item = f64> {
+    let (first, second) = match mode {
+        Mode::Time => (jd, None),
+        Mode::Phase {
+            epoch,
+            period,
+            two_cycles,
+        } => {
+            let ph = phase::phase(jd, epoch, period);
+            (ph, two_cycles.then_some(ph - 1.0))
+        }
+    };
+    std::iter::once(first).chain(second)
 }
 
 pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
@@ -80,15 +118,17 @@ pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
             if idx.is_empty() {
                 continue;
             }
-            let pts: Vec<[f64; 2]> = idx
-                .iter()
-                .map(|&i| [ds.observations[i].jd, ds.observations[i].mag])
-                .collect();
-            if opts.show_errors {
-                for &i in &idx {
-                    let o = &ds.observations[i];
-                    if o.error > 0.0 && error_bars.len() < MAX_ERROR_BARS {
-                        error_bars.push([[o.jd, o.mag - o.error], [o.jd, o.mag + o.error]]);
+            // One entry per drawn point; a phase plot of two cycles draws each
+            // observation twice.
+            let (mut obs_of_point, mut xs, mut pts) = (Vec::new(), Vec::new(), Vec::new());
+            for &i in &idx {
+                let o = &ds.observations[i];
+                for x in x_positions(opts.mode, o.jd) {
+                    obs_of_point.push(i);
+                    xs.push(x);
+                    pts.push([x, o.mag]);
+                    if opts.show_errors && o.error > 0.0 && error_bars.len() < MAX_ERROR_BARS {
+                        error_bars.push([[x, o.mag - o.error], [x, o.mag + o.error]]);
                     }
                 }
             }
@@ -101,48 +141,104 @@ pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
                 } else {
                     3.5
                 });
-            series.push((Series { name, obs: idx }, points));
+            series.push((
+                Series {
+                    name,
+                    obs: obs_of_point,
+                    x: xs,
+                },
+                points,
+            ));
         }
     }
 
     let (meta, points): (Vec<Series>, Vec<Points>) = series.into_iter().unzip();
     let observations = &ds.observations;
 
-    let mut plot = Plot::new("light_curve")
-        .invert_y(true)
-        .x_axis_label("Julian Date")
-        .y_axis_label("Magnitude")
-        .legend(Legend::default().follow_insertion_order(true))
-        .label_formatter(move |pos| match pos {
-            HoverPosition::NearDataPoint {
-                plot_name, index, ..
-            } => {
-                let s = meta.iter().find(|s| s.name == *plot_name)?;
-                let o = &observations[*s.obs.get(*index)?];
-                let error = if o.error > 0.0 {
-                    format!("± {:.3}", o.error)
-                } else {
-                    "not given".to_string()
-                };
-                let mut text = format!(
-                    "{plot_name}\nJD {:.5}\n{}\nMag {}{:.3}\nError {error}\nObscode {}",
-                    o.jd,
-                    time::jd_to_ut_string(o.jd),
-                    if o.fainter_than { "<" } else { "" },
-                    o.mag,
-                    o.observer.as_deref().unwrap_or("not given"),
-                );
-                if let Some(c) = &o.comment {
-                    text.push_str(&format!("\n{c}"));
-                }
-                Some(text)
+    let phase_mode = matches!(opts.mode, Mode::Phase { .. });
+    let calendar_axis = opts.calendar_axis && !phase_mode;
+    let mut plot = Plot::new(if phase_mode {
+        "phase_plot"
+    } else {
+        "light_curve"
+    })
+    .invert_y(true)
+    .x_axis_label(if phase_mode {
+        "Phase"
+    } else if calendar_axis {
+        "Date (UT)"
+    } else {
+        "Julian Date"
+    })
+    .y_axis_label("Magnitude")
+    .legend(Legend::default().follow_insertion_order(true))
+    .x_axis_formatter(move |mark, _range| {
+        if !calendar_axis {
+            return egui_plot::format_number(mark.value, 6);
+        }
+        let (y, mo, d, h, mi, _) = time::jd_to_gregorian(mark.value);
+        if mark.step_size >= 1.0 {
+            format!("{y:04}-{mo:02}-{d:02}")
+        } else {
+            format!("{mo:02}-{d:02} {h:02}:{mi:02}")
+        }
+    })
+    .label_formatter(move |pos| match pos {
+        HoverPosition::NearDataPoint {
+            plot_name, index, ..
+        } => {
+            let s = meta.iter().find(|s| s.name == *plot_name)?;
+            let o = &observations[*s.obs.get(*index)?];
+            let error = if o.error > 0.0 {
+                format!("± {:.3}", o.error)
+            } else {
+                "not given".to_string()
+            };
+            let x = s.x[*index];
+            let when = if phase_mode {
+                format!("Phase {x:.4}\nJD {:.5}", o.jd)
+            } else {
+                format!("JD {:.5}", o.jd)
+            };
+            let mut text = format!(
+                "{plot_name}\n{when}\n{}\nMag {}{:.3}\nError {error}\nObscode {}",
+                time::jd_to_ut_string(o.jd),
+                if o.fainter_than { "<" } else { "" },
+                o.mag,
+                o.observer.as_deref().unwrap_or("not given"),
+            );
+            if let Some(c) = &o.comment {
+                text.push_str(&format!("\n{c}"));
             }
-            HoverPosition::Elsewhere { position } => {
-                Some(format!("JD {:.4}\nMag {:.3}", position.x, position.y))
+            Some(text)
+        }
+        HoverPosition::Elsewhere { position } => {
+            if calendar_axis {
+                return Some(format!(
+                    "{}\nMag {:.3}",
+                    time::jd_to_ut_string(position.x),
+                    position.y
+                ));
             }
-        });
+            let axis = if phase_mode { "Phase" } else { "JD" };
+            Some(format!("{axis} {:.4}\nMag {:.3}", position.x, position.y))
+        }
+    });
     if opts.reset_view {
         plot = plot.reset();
+    }
+    let overlay = if phase_mode { None } else { opts.overlay };
+    if overlay.is_some() {
+        // Keep the residual plot below in step with this one.
+        plot = plot
+            .link_axis(egui::Id::unique("model_x"), [true, false])
+            .link_cursor(egui::Id::unique("model_x"), [true, false]);
+    }
+
+    if let Mode::Phase { two_cycles, .. } = opts.mode {
+        plot = plot
+            .include_x(if two_cycles { -1.0 } else { 0.0 })
+            .include_x(1.0);
     }
 
     let bar_color = ui.visuals().weak_text_color().gamma_multiply(0.6);
@@ -157,6 +253,14 @@ pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
         }
         for p in points {
             plot_ui.points(p);
+        }
+        if let Some(curve) = overlay {
+            plot_ui.line(
+                Line::new("Model", PlotPoints::new(curve.to_vec()))
+                    .color(theme::MODEL)
+                    .width(1.8)
+                    .allow_hover(false),
+            );
         }
     });
 }

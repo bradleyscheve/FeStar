@@ -1,22 +1,23 @@
-# VStar-RS
+# FeStar
 
 A redesign of VStar with new AI integrations: a modern, fast desktop app for
 variable star light curve analysis, written in Rust. It is a rewrite of [AAVSO VStar](https://github.com/AAVSO/VStar), which
 it uses as the reference for its data loaders and analysis methods.
 
-![VStar-RS showing a light curve (synthetic demo data)](docs/screenshot-dark.png)
+![FeStar showing a light curve (synthetic demo data)](docs/screenshot-dark.png)
 
 ## Status
 
-This is step 1 of 4 in the plan:
+Progress against the four-step plan:
 
-1. **Foundation (this step):** the app window, AAVSO and BAA data loading, and
-   an interactive light curve. *Done.*
-2. **Analysis:** period search (DCDFT, Lomb-Scargle and others, ported from
-   VStar), phase plots, and favourite stars whose data is preloaded at startup.
-3. **Gaia:** Gaia DR3 epoch photometry for the selected star.
+1. **Foundation:** the app window, AAVSO and BAA data loading, and an
+   interactive light curve. *Done.*
+2. **Analysis:** period search, phase plots and models, favourite stars.
+   *Built, in review.*
+3. **Gaia:** Gaia DR3 epoch photometry for the selected star. *Built, in
+   review.*
 4. **AI and packaging:** optional AI help choosing period-search settings and
-   explaining results, then a Windows installer.
+   explaining results, then a Windows installer. *Not started.*
 
 Windows is the first target. The code is portable, so macOS and Linux builds
 can follow.
@@ -26,21 +27,26 @@ can follow.
 - **AAVSO International Database:** type a star name (e.g. `SS Cyg`) and load
   its observations, optionally limited to a JD range. Star details (type,
   period, spectral type, coordinates) come from VSX.
-- **BAA VSS database:** download a star's observations as CSV from the
-  [BAA VSS database](https://britastro.org/vssdb/data.php) and open the file.
+- **BAA VSS database and Gaia DR3:** download BAA observations as CSV and open
+  the file, or load Gaia epoch photometry (G, BP, RP) for variable stars.
 - **Other files:** AAVSO download files, VStar "simple format" files, and most
   CSV or tab-separated files with JD (or UT date) and magnitude columns.
 - **Light curve:** zoom, pan, hover for details of each observation, per-band
-  colours matching VStar, error bars, fainter-than estimates and discrepant
-  observations on or off.
+  colours, error bars, fainter-than estimates, discrepant observations on or
+  off, and Julian or calendar dates on the axis.
+- **Analysis:** period search, phase plots and models.
+- **One tab per loaded star**, so you can switch stars without reloading.
+- **Star card:** variability type, spectral type and a star icon that reflects
+  the type; buttons to open the star's VSP chart, VSX page, Stellarium and
+  N.I.N.A. framing, and to view the latest AAVSO spectra.
 - Light, dark or follow-Windows theme. Recent stars and settings are
   remembered between runs.
 
 ## Getting the Windows app
 
 Every push to `main` builds the Windows app in GitHub Actions. Open the latest
-run under the **Actions** tab and download the `vstar-rs-windows` artifact. It
-contains `vstar-rs.exe`, which runs without installing anything.
+run under the **Actions** tab and download the `festar-windows` artifact. It
+contains `festar.exe`, which runs without installing anything.
 
 If the window stays blank on an older PC, set the environment variable
 `VSTAR_OPENGL=1` to use the OpenGL renderer instead of DirectX 12.
@@ -50,12 +56,12 @@ If the window stays blank on an older PC, set the environment variable
 Install Rust from <https://rustup.rs>, then:
 
 ```
-cargo run --release -p vstar-app
+cargo run --release -p vstar-app --bin festar
 cargo test
 ```
 
 You can also pass a data file to open at startup:
-`vstar-rs path\to\observations.csv`.
+`festar path\to\observations.csv`.
 
 ## Layout
 
@@ -66,7 +72,7 @@ You can also pass a data file to open at startup:
 ## Licence
 
 VStar is licensed under the GNU Affero General Public License v3, and this
-project ports code from it, so VStar-RS is under the same licence. See
+project ports code from it, so FeStar is under the same licence. See
 [LICENSE](LICENSE).
 
 Please acknowledge the data sources you use: the AAVSO International Database,

@@ -1,0 +1,415 @@
+//! File > Preferences: connecting an AI provider.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use egui::RichText;
+use vstar_core::ai::{AiClient, AiConfig, Provider, load_key};
+use vstar_core::http::ReqwestClient;
+use vstar_core::secrets::{KeyringStore, MemoryStore, SecretStore};
+
+use crate::external::ExternalApps;
+use crate::task::Task;
+use crate::theme;
+
+const KEYRING_SERVICE: &str = "FeStar";
+/// Keys saved before the rename are still found here.
+const LEGACY_KEYRING_SERVICE: &str = "VStar-RS";
+
+/// API keys live in the operating system's credential store. If it can't be
+/// used (some Linux setups), keys are kept in memory for this session only.
+pub struct Secrets {
+    keyring: KeyringStore,
+    legacy: KeyringStore,
+    memory: MemoryStore,
+    session_only: AtomicBool,
+}
+
+impl Secrets {
+    pub fn new() -> Self {
+        Self {
+            keyring: KeyringStore::new(KEYRING_SERVICE),
+            legacy: KeyringStore::new(LEGACY_KEYRING_SERVICE),
+            memory: MemoryStore::default(),
+            session_only: AtomicBool::new(false),
+        }
+    }
+
+    pub fn key(&self, provider: Provider) -> Option<String> {
+        match load_key(&self.keyring, provider) {
+            Ok(Some(k)) => Some(k),
+            Ok(None) | Err(_) => load_key(&self.legacy, provider)
+                .ok()
+                .flatten()
+                .or_else(|| load_key(&self.memory, provider).ok().flatten()),
+        }
+    }
+
+    /// Save a key; returns where it went, for the confirmation message.
+    pub fn save(&self, provider: Provider, key: &str) -> &'static str {
+        match self.keyring.set(provider.account(), key) {
+            Ok(()) => {
+                let _ = self.memory.delete(provider.account());
+                "saved in your computer's credential store"
+            }
+            Err(_) => {
+                self.session_only.store(true, Ordering::Relaxed);
+                let _ = self.memory.set(provider.account(), key);
+                "kept for this session only (the credential store isn't available)"
+            }
+        }
+    }
+
+    pub fn remove(&self, provider: Provider) {
+        let _ = self.keyring.delete(provider.account());
+        let _ = self.legacy.delete(provider.account());
+        let _ = self.memory.delete(provider.account());
+    }
+
+    pub fn store_name(&self) -> &'static str {
+        if cfg!(target_os = "windows") {
+            "Windows Credential Manager"
+        } else if cfg!(target_os = "macos") {
+            "the macOS Keychain"
+        } else {
+            "the system keyring"
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct PrefsState {
+    pub open: bool,
+    key_input: String,
+    /// Result of the last action, shown under the key box: (ok, message).
+    message: Option<(bool, String)>,
+    test: Option<Task<()>>,
+    /// Models the provider reported, for the provider they were fetched from.
+    models: Option<(Provider, Vec<String>)>,
+    fetching: Option<Task<Vec<String>>>,
+}
+
+impl PrefsState {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        config: &mut AiConfig,
+        apps: &mut ExternalApps,
+        secrets: &Secrets,
+    ) {
+        if !self.open {
+            return;
+        }
+        self.finish_test();
+        self.finish_fetch(config.provider);
+
+        let mut open = true;
+        egui::Window::new("Preferences")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .min_width(460.0)
+            .show(ctx, |ui| {
+                self.contents(ui, config, secrets);
+                ui.add_space(10.0);
+                ui.separator();
+                external_contents(ui, apps);
+            });
+        self.open = open;
+    }
+
+    fn finish_fetch(&mut self, provider: Provider) {
+        let Some(result) = self.fetching.as_ref().and_then(Task::poll) else {
+            return;
+        };
+        self.fetching = None;
+        match result {
+            Ok(list) if list.is_empty() => {
+                self.message = Some((false, "The provider listed no models.".into()))
+            }
+            Ok(list) => {
+                self.message = Some((true, format!("Found {} models.", list.len())));
+                self.models = Some((provider, list));
+            }
+            Err(e) => self.message = Some((false, e.to_string())),
+        }
+    }
+
+    fn finish_test(&mut self) {
+        let Some(result) = self.test.as_ref().and_then(Task::poll) else {
+            return;
+        };
+        self.test = None;
+        self.message = Some(match result {
+            Ok(()) => (
+                true,
+                "Connected. The provider accepted the key and model.".into(),
+            ),
+            Err(e) => (false, e.to_string()),
+        });
+    }
+
+    fn contents(&mut self, ui: &mut egui::Ui, config: &mut AiConfig, secrets: &Secrets) {
+        ui.label(RichText::new("AI provider").strong().size(16.0));
+        ui.label(
+            "FeStar can ask an AI model to choose period-search and phase-plot settings. \
+             Connect your own account by pasting an API key.",
+        );
+        ui.add_space(6.0);
+
+        egui::Grid::new("ai_prefs")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .show(ui, |ui| {
+                ui.label("Provider");
+                let before = config.provider;
+                egui::ComboBox::from_id_salt("ai_provider")
+                    .selected_text(config.provider.label())
+                    .width(280.0)
+                    .show_ui(ui, |ui| {
+                        for p in Provider::ALL {
+                            ui.selectable_value(&mut config.provider, p, p.label());
+                        }
+                    });
+                if config.provider != before {
+                    self.key_input.clear();
+                    self.message = None;
+                }
+                ui.end_row();
+
+                if config.provider.has_editable_address() {
+                    ui.label("Address");
+                    ui.add(
+                        egui::TextEdit::singleline(config.address_mut())
+                            .hint_text("http://localhost:11434/v1")
+                            .desired_width(280.0),
+                    );
+                    ui.end_row();
+                }
+
+                ui.label("Model");
+                let provider = config.provider;
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(config.model_mut()).desired_width(200.0));
+                    let fetched = self
+                        .models
+                        .as_ref()
+                        .filter(|(p, _)| *p == provider)
+                        .map(|(_, list)| list.clone());
+                    let choices: Vec<String> = fetched.unwrap_or_else(|| {
+                        provider
+                            .suggested_models()
+                            .iter()
+                            .map(|m| m.to_string())
+                            .collect()
+                    });
+                    if !choices.is_empty() {
+                        egui::ComboBox::from_id_salt("ai_model_suggestions")
+                            .selected_text("Choose")
+                            .show_ui(ui, |ui| {
+                                for m in &choices {
+                                    if ui.selectable_label(config.model() == m, m).clicked() {
+                                        *config.model_mut() = m.clone();
+                                    }
+                                }
+                            });
+                    }
+                });
+                ui.end_row();
+
+                ui.label("API key");
+                let saved = secrets.key(config.provider).is_some();
+                ui.vertical(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.key_input)
+                            .password(true)
+                            .hint_text(if saved {
+                                "A key is saved. Paste a new one to replace it."
+                            } else {
+                                "Paste your API key"
+                            })
+                            .desired_width(280.0),
+                    );
+                    ui.horizontal(|ui| {
+                        let can_save = !self.key_input.trim().is_empty();
+                        if ui
+                            .add_enabled(can_save, egui::Button::new("Save key"))
+                            .clicked()
+                        {
+                            let place = secrets.save(config.provider, self.key_input.trim());
+                            self.key_input.clear();
+                            self.message = Some((true, format!("Key {place}.")));
+                        }
+                        if ui
+                            .add_enabled(saved, egui::Button::new("Remove key"))
+                            .clicked()
+                        {
+                            secrets.remove(config.provider);
+                            self.message = Some((true, "Key removed.".into()));
+                        }
+                    });
+                });
+                ui.end_row();
+            });
+
+        ui.add_space(4.0);
+        let provider = config.provider;
+        match secrets.key(provider) {
+            Some(_) => ui
+                .label(RichText::new(format!("✔ A key for {} is saved.", provider.label())).weak()),
+            None if provider.key_is_optional() => {
+                ui.label(RichText::new("This provider may not need a key.").weak())
+            }
+            None => ui.label(RichText::new("No key saved yet.").weak()),
+        };
+        if let Some(url) = provider.key_page() {
+            ui.hyperlink_to("Get an API key ↗", url);
+        }
+
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            let testing = self.test.is_some();
+            let ready = config.is_complete()
+                && (secrets.key(provider).is_some() || provider.key_is_optional());
+            if ui
+                .add_enabled(ready && !testing, egui::Button::new("Test connection"))
+                .clicked()
+            {
+                self.message = None;
+                let (cfg, key) = (config.clone(), secrets.key(provider).unwrap_or_default());
+                self.test = Some(Task::spawn(
+                    ui.ctx(),
+                    "Testing the AI connection",
+                    move |_| {
+                        let http = ReqwestClient::new()?;
+                        AiClient {
+                            http: &http,
+                            config: &cfg,
+                            api_key: &key,
+                        }
+                        .test()
+                    },
+                ));
+            }
+            let fetching = self.fetching.is_some();
+            if ui
+                .add_enabled(
+                    !fetching && (secrets.key(provider).is_some() || provider.key_is_optional()),
+                    egui::Button::new("Fetch model list"),
+                )
+                .on_hover_text("Ask the provider which models it offers right now")
+                .clicked()
+            {
+                self.message = None;
+                let (cfg, key) = (config.clone(), secrets.key(provider).unwrap_or_default());
+                self.fetching = Some(Task::spawn(ui.ctx(), "Fetching model list", move |_| {
+                    let http = ReqwestClient::new()?;
+                    AiClient {
+                        http: &http,
+                        config: &cfg,
+                        api_key: &key,
+                    }
+                    .list_models()
+                }));
+            }
+            if fetching {
+                ui.spinner();
+            }
+            if testing {
+                ui.spinner();
+                ui.label("Testing…");
+            }
+        });
+        if let Some((ok, msg)) = &self.message {
+            let color = if *ok {
+                ui.visuals().text_color()
+            } else {
+                ui.visuals().error_fg_color
+            };
+            ui.colored_label(color, msg);
+        }
+
+        ui.add_space(8.0);
+        theme::card(ui).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(RichText::new("About your key and your data").strong());
+            ui.label(
+                RichText::new(format!(
+                    "Your key is stored in {}, not in a file. Only a statistical summary is sent \
+                     to the provider (the star's name and type, how many observations, the time span, \
+                     and a few candidate periods), never the observations themselves. \
+                     API usage is billed by the provider and is separate from any chat subscription.",
+                    secrets.store_name()
+                ))
+                .weak(),
+            );
+        });
+    }
+}
+
+/// Where Stellarium and N.I.N.A. are, for the buttons on the star card.
+fn external_contents(ui: &mut egui::Ui, apps: &mut ExternalApps) {
+    ui.label(RichText::new("Stellarium and N.I.N.A.").strong().size(16.0));
+    ui.label(
+        "The star card's Stellarium and NINA buttons send the star's position to these programs. \
+         Setting the location lets FeStar start a program that isn't running yet.",
+    );
+    ui.add_space(6.0);
+    let row = |ui: &mut egui::Ui,
+               id: &str,
+               label: &str,
+               path: &mut String,
+               port: &mut u16,
+               hint: &str| {
+        ui.label(label);
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(path)
+                        .hint_text(hint)
+                        .desired_width(240.0),
+                );
+                if ui.button("Browse…").clicked()
+                    && let Some(file) = rfd::FileDialog::new().pick_file()
+                {
+                    *path = file.display().to_string();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Port").weak());
+                ui.add(egui::DragValue::new(port).range(1..=65535).speed(1));
+            });
+        });
+        ui.end_row();
+        let _ = id;
+    };
+    egui::Grid::new("external_apps")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            row(
+                ui,
+                "stellarium",
+                "Stellarium",
+                &mut apps.stellarium_path,
+                &mut apps.stellarium_port,
+                "C:\\Program Files\\Stellarium\\stellarium.exe",
+            );
+            row(
+                ui,
+                "nina",
+                "N.I.N.A.",
+                &mut apps.nina_path,
+                &mut apps.nina_port,
+                "C:\\Program Files\\N.I.N.A. - Nighttime Imaging 'N' Astronomy\\NINA.exe",
+            );
+        });
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new(
+            "Stellarium needs its Remote Control plugin switched on (default port 8090). \
+             N.I.N.A. needs the Advanced API plugin with its server started (default port 1888).",
+        )
+        .weak(),
+    );
+}

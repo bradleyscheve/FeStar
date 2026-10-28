@@ -68,6 +68,32 @@ pub fn jd_to_ut_string(jd: f64) -> String {
     format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02} UT")
 }
 
+/// Seconds-since-1970 to Julian Date.
+const UNIX_EPOCH_JD: f64 = 2440587.5;
+
+/// The current Julian Date, from the computer's clock.
+pub fn now_jd() -> f64 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64());
+    UNIX_EPOCH_JD + secs / 86400.0
+}
+
+/// The Julian Date exactly one calendar year before `jd` (same month, day
+/// and time; 29 February becomes 28 February).
+pub fn one_year_before(jd: f64) -> f64 {
+    let (year, month, day, h, mi, s) = jd_to_gregorian(jd);
+    let day = if month == 2 && day == 29 { 28 } else { day };
+    let frac = (h as f64 * 3600.0 + mi as f64 * 60.0 + s as f64) / 86400.0;
+    gregorian_to_jd(year - 1, month, day as f64 + frac)
+}
+
+/// Format a Julian Date as "YYYY-MM-DD" (UT).
+pub fn jd_to_date_string(jd: f64) -> String {
+    let (y, mo, d, ..) = jd_to_gregorian(jd);
+    format!("{y:04}-{mo:02}-{d:02}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +113,20 @@ mod tests {
         assert_eq!(jd_to_gregorian(2451545.0), (2000, 1, 1, 12, 0, 0));
         assert_eq!(jd_to_ut_string(2436116.31), "1957-10-04 19:26:24 UT");
         assert_eq!(jd_to_gregorian(2299160.5), (1582, 10, 15, 0, 0, 0));
+    }
+
+    #[test]
+    fn one_year_before_keeps_date_and_time() {
+        let now = gregorian_to_jd(2026, 10, 27.75);
+        assert_eq!(jd_to_date_string(one_year_before(now)), "2025-10-27");
+        assert!((one_year_before(now) - (now - 365.0)).abs() < 1e-9);
+        let leap = gregorian_to_jd(2024, 2, 29.0);
+        assert_eq!(jd_to_date_string(one_year_before(leap)), "2023-02-28");
+    }
+
+    #[test]
+    fn now_is_after_2026() {
+        assert!(now_jd() > gregorian_to_jd(2026, 1, 1.0));
+        assert_eq!(jd_to_date_string(2451545.0), "2000-01-01");
     }
 }
