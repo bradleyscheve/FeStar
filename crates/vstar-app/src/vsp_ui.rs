@@ -97,6 +97,7 @@ impl VspState {
                 if let Some(e) = &self.error {
                     ui.colored_label(ui.visuals().error_fg_color, e);
                     ui.label("The star name must be one that VSP knows.");
+                    ui.hyperlink_to("Open VSP on the web ↗", "https://apps.aavso.org/v2/vsp/");
                     if ui.button("Try again").clicked() {
                         let star = self.star.clone();
                         self.open(ctx, &star);
