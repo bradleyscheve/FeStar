@@ -2,7 +2,7 @@
 //! spectroscopy database (AVSpec).
 
 use egui::RichText;
-use egui_plot::{Line, Plot, PlotPoints};
+use egui_plot::{HoverPosition, Line, Plot, PlotPoints};
 use vstar_core::http::ReqwestClient;
 use vstar_core::sources::avspec::{self, Record};
 use vstar_core::spectra;
@@ -101,6 +101,7 @@ impl VStarApp {
             return;
         }
         let records = &self.spectra.records;
+        let nm = self.settings.spectrum_nm;
         let line_color = ui.visuals().strong_text_color();
         let height = ((ui.available_height() - 90.0) / 2.0).max(140.0);
         ui.add_space(4.0);
@@ -108,7 +109,7 @@ impl VStarApp {
             for pair in records.chunks(2) {
                 ui.columns(2, |cols| {
                     for (col, record) in cols.iter_mut().zip(pair) {
-                        spectrum_plot(col, record, height, line_color);
+                        spectrum_plot(col, record, height, line_color, nm);
                     }
                 });
                 ui.add_space(8.0);
@@ -117,21 +118,32 @@ impl VStarApp {
     }
 }
 
-fn spectrum_plot(ui: &mut egui::Ui, record: &Record, height: f32, color: egui::Color32) {
+fn spectrum_plot(ui: &mut egui::Ui, record: &Record, height: f32, color: egui::Color32, nm: bool) {
     ui.horizontal(|ui| {
         ui.label(RichText::new(describe(record)).strong());
         ui.hyperlink_to("AVSpec ↗", spectra::page_url(record.row.id));
     });
     let s = &record.spectrum;
+    // Wavelengths are stored in ångströms; one nanometre is ten of them.
+    let (scale, unit) = if nm { (0.1, "nm") } else { (1.0, "Å") };
     let points: PlotPoints = s
         .wavelengths
         .iter()
         .zip(&s.flux)
-        .map(|(w, f)| [*w, *f])
+        .map(|(w, f)| [*w * scale, *f])
         .collect();
     Plot::new(("spectrum", record.row.id))
         .height(height)
-        .x_axis_label("Wavelength (Å)")
+        .x_axis_label(format!("Wavelength ({unit})"))
+        .label_formatter(move |pos| {
+            let (HoverPosition::NearDataPoint { position, .. }
+            | HoverPosition::Elsewhere { position }) = pos;
+            let digits = if nm { 2 } else { 1 };
+            Some(format!(
+                "{:.digits$} {unit}\nflux {:.4}",
+                position.x, position.y
+            ))
+        })
         .y_axis_label("Flux")
         .allow_scroll(false)
         .show(ui, |plot| {

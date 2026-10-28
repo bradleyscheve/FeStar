@@ -65,7 +65,7 @@ pub enum ThemeChoice {
 /// Remembered between runs.
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
-struct Settings {
+pub(crate) struct Settings {
     source: SourceKind,
     star_name: String,
     limit_dates: bool,
@@ -84,6 +84,8 @@ struct Settings {
     show_errors: bool,
     /// Chart dates as calendar dates instead of Julian Dates.
     calendar_axis: bool,
+    /// Spectrum charts in nanometres instead of ångströms.
+    pub(crate) spectrum_nm: bool,
     show_discrepant: bool,
     show_fainter_than: bool,
     theme: ThemeChoice,
@@ -107,6 +109,7 @@ impl Default for Settings {
             ai: AiConfig::default(),
             show_errors: true,
             calendar_axis: false,
+            spectrum_nm: false,
             show_discrepant: false,
             show_fainter_than: true,
             theme: ThemeChoice::System,
@@ -157,7 +160,7 @@ struct StarSlot {
 }
 
 pub struct VStarApp {
-    settings: Settings,
+    pub(crate) settings: Settings,
     /// One entry per open star tab. The entry at `active` is stale while its
     /// star is live in the fields below.
     slots: Vec<StarSlot>,
@@ -644,6 +647,7 @@ impl VStarApp {
                 }
                 ui.separator();
                 ui.checkbox(&mut self.settings.calendar_axis, "Calendar dates on the chart");
+                ui.checkbox(&mut self.settings.spectrum_nm, "Spectrum wavelengths in nm (not Å)");
             });
             ui.menu_button("Help", |ui| {
                 ui.hyperlink_to("VStar user manual", "https://aavso.github.io/VStar/docs/vstar/release/user_manual/VStarUserManual.pdf");
