@@ -262,9 +262,9 @@ pub fn star_icon(
             }
         }
         StarLook::Pulsator => {
-            // The star with a faint halo, and four arrows pointing outward
+            // The star with a faint halo in the star's own colour, and four arrows pointing outward
             // between the two to show it swelling and shrinking.
-            let ring = Color32::from_rgb(90, 105, 225);
+            let ring = base;
             painter.circle_filled(c, 12.5, ring.gamma_multiply(0.12));
             painter.circle_stroke(c, 12.5, Stroke::new(1.2, ring.gamma_multiply(0.75)));
             star(c, 5.0, base);
