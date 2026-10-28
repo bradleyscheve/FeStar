@@ -31,6 +31,14 @@ impl Default for ExternalApps {
     }
 }
 
+/// A star to send: its position and name.
+#[derive(Clone)]
+pub struct Target {
+    pub ra_deg: f64,
+    pub dec_deg: f64,
+    pub name: String,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Program {
     Stellarium,
@@ -71,12 +79,11 @@ pub fn open(
     ctx: &egui::Context,
     program: Program,
     apps: &ExternalApps,
-    ra_deg: f64,
-    dec_deg: f64,
+    target: Target,
 ) -> Task<String> {
     let apps = apps.clone();
     Task::spawn(ctx, format!("Opening in {}", program.name()), move |_| {
-        send(program, &apps, ra_deg, dec_deg)
+        send(program, &apps, &target)
     })
 }
 
@@ -103,23 +110,29 @@ fn try_send(
     http: &ReqwestClient,
     program: Program,
     apps: &ExternalApps,
-    ra_deg: f64,
-    dec_deg: f64,
+    target: &Target,
 ) -> Result<()> {
+    let Target {
+        ra_deg,
+        dec_deg,
+        name,
+    } = target;
     match program {
-        Program::Stellarium => open_in_stellarium(http, apps.stellarium_port, ra_deg, dec_deg),
-        Program::Nina => open_in_nina(http, apps.nina_port, ra_deg, dec_deg),
+        Program::Stellarium => {
+            open_in_stellarium(http, apps.stellarium_port, *ra_deg, *dec_deg, name)
+        }
+        Program::Nina => open_in_nina(http, apps.nina_port, *ra_deg, *dec_deg),
     }
 }
 
-fn send(program: Program, apps: &ExternalApps, ra_deg: f64, dec_deg: f64) -> Result<String> {
+fn send(program: Program, apps: &ExternalApps, target: &Target) -> Result<String> {
     let http = ReqwestClient::new()?;
     let name = program.name();
     let sent = || {
         format!(
             "Sent {} {} to {name}.",
-            planetarium::ra_hms(ra_deg),
-            planetarium::dec_dms(dec_deg)
+            planetarium::ra_hms(target.ra_deg),
+            planetarium::dec_dms(target.dec_deg)
         )
     };
     let answered_with_error = |e: &Error| {
@@ -128,7 +141,7 @@ fn send(program: Program, apps: &ExternalApps, ra_deg: f64, dec_deg: f64) -> Res
             program.setup_hint()
         ))
     };
-    match try_send(&http, program, apps, ra_deg, dec_deg) {
+    match try_send(&http, program, apps, target) {
         Ok(()) => return Ok(sent()),
         Err(e) if server_answered(&e) => return Err(answered_with_error(&e)),
         Err(e @ Error::Analysis(_)) => return Err(e),
@@ -158,7 +171,7 @@ fn send(program: Program, apps: &ExternalApps, ra_deg: f64, dec_deg: f64) -> Res
     let started = std::time::Instant::now();
     loop {
         std::thread::sleep(std::time::Duration::from_secs(3));
-        match try_send(&http, program, apps, ra_deg, dec_deg) {
+        match try_send(&http, program, apps, target) {
             Ok(()) => return Ok(sent()),
             Err(e) if server_answered(&e) => return Err(answered_with_error(&e)),
             Err(e @ Error::Analysis(_)) => return Err(e),

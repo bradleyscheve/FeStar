@@ -45,13 +45,22 @@ pub fn dec_dms(dec_deg: f64) -> String {
     format!("{sign}{d:02.0}d{m:02.0}m{s:04.1}s")
 }
 
-/// The Stellarium script that centres the view on a position.
-pub fn stellarium_script(ra_deg: f64, dec_deg: f64) -> String {
-    format!(
+/// The Stellarium script that centres the view on a position and then
+/// selects the star by name, so a telescope-control plugin can slew to it.
+/// If Stellarium doesn't know the name, nothing is selected.
+pub fn stellarium_script(ra_deg: f64, dec_deg: f64, name: &str) -> String {
+    let mut script = format!(
         "core.moveToRaDecJ2000(\"{}\", \"{}\", 1);\nStelMovementMgr.zoomTo(5, 1);",
         ra_hms(ra_deg),
         dec_dms(dec_deg)
-    )
+    );
+    let name = name.trim().replace(['\\', '"', '\n', '\r'], "");
+    if !name.is_empty() {
+        script.push_str(&format!(
+            "\ncore.wait(1.2);\ncore.selectObjectByName(\"{name}\", true);"
+        ));
+    }
+    script
 }
 
 pub fn stellarium_url(port: u16) -> String {
@@ -65,8 +74,9 @@ pub fn open_in_stellarium(
     port: u16,
     ra_deg: f64,
     dec_deg: f64,
+    name: &str,
 ) -> Result<()> {
-    let script = stellarium_script(ra_deg, dec_deg);
+    let script = stellarium_script(ra_deg, dec_deg, name);
     // Stellarium's web server doesn't always read a form body, so the script
     // also goes in the address, which it always reads.
     let code = super::sources::encode_query_value(&script).replace('+', "%20");
@@ -143,7 +153,7 @@ mod tests {
     #[test]
     fn stellarium_gets_a_script() {
         let http = Recorder::default();
-        open_in_stellarium(&http, 8090, 239.876, 25.9203).unwrap();
+        open_in_stellarium(&http, 8090, 239.876, 25.9203, "R CrB").unwrap();
         let calls = http.calls.lock().unwrap();
         assert!(
             calls[0].starts_with(
@@ -151,6 +161,15 @@ mod tests {
             )
         );
         assert!(calls[0].contains("15h59m30.24s"));
+        assert!(calls[0].contains("selectObjectByName%28%22R%20CrB%22"));
+    }
+
+    #[test]
+    fn stellarium_script_without_a_name_only_centres() {
+        let script = stellarium_script(10.0, 20.0, "  ");
+        assert!(!script.contains("selectObjectByName"));
+        let tricky = stellarium_script(10.0, 20.0, "A\"B\\");
+        assert!(tricky.contains("selectObjectByName(\"AB\", true)"));
     }
 
     #[test]

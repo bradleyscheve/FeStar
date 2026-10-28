@@ -500,7 +500,7 @@ impl VStarApp {
         program: Program,
         icon: theme::Icon,
         tip: &str,
-        position: Option<(f64, f64)>,
+        position: Option<external::Target>,
     ) {
         ui.horizontal(|ui| {
             theme::icon(ui, icon);
@@ -515,8 +515,8 @@ impl VStarApp {
             } else {
                 response.on_disabled_hover_text("This star's position isn't known")
             };
-            if let (true, Some((ra, dec))) = (response.clicked(), position) {
-                *task = Some(external::open(ui.ctx(), program, apps, ra, dec));
+            if let (true, Some(target)) = (response.clicked(), position) {
+                *task = Some(external::open(ui.ctx(), program, apps, target));
             }
         });
     }
@@ -849,7 +849,15 @@ impl VStarApp {
                         row(ui, "JD range", Some(format!("{a:.1} – {b:.1}")));
                     }
                 });
-            let position = ds.star.ra_deg.zip(ds.star.dec_deg);
+            let position = ds
+                .star
+                .ra_deg
+                .zip(ds.star.dec_deg)
+                .map(|(ra_deg, dec_deg)| external::Target {
+                    ra_deg,
+                    dec_deg,
+                    name: ds.star.name.clone(),
+                });
             let has_name = !ds.star.name.trim().is_empty();
             egui::Grid::new("star_links")
                 .num_columns(2)
@@ -868,7 +876,7 @@ impl VStarApp {
                         Program::Stellarium,
                         theme::Icon::Moon,
                         "Centre Stellarium on this star (needs its Remote Control plugin)",
-                        position,
+                        position.clone(),
                     );
                     ui.end_row();
                     ui.horizontal(|ui| {
@@ -893,7 +901,7 @@ impl VStarApp {
                         Program::Nina,
                         theme::Icon::Telescope,
                         "Open this star in N.I.N.A.'s framing tool (needs the Advanced API plugin)",
-                        position,
+                        position.clone(),
                     );
                     ui.end_row();
                 });
