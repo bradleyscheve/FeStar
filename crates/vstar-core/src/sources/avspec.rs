@@ -235,8 +235,9 @@ pub fn download(http: &dyn HttpClient, id: u64) -> Result<Vec<u8>> {
     )))
 }
 
-/// The `count` most recent spectra of a star, downloaded and read.
-pub fn latest(http: &dyn HttpClient, name: &str, count: usize) -> Result<Vec<Record>> {
+/// The `count` most recent spectra of a star after the first `skip`,
+/// downloaded and read. Fewer come back when AVSpec has no more to list.
+pub fn latest(http: &dyn HttpClient, name: &str, skip: usize, count: usize) -> Result<Vec<Record>> {
     let rows = search(http, name)?;
     if rows.is_empty() {
         return Err(Error::Analysis(format!(
@@ -245,6 +246,7 @@ pub fn latest(http: &dyn HttpClient, name: &str, count: usize) -> Result<Vec<Rec
         )));
     }
     rows.into_iter()
+        .skip(skip)
         .take(count)
         .map(|row| {
             let bytes = download(http, row.id)?;
@@ -338,12 +340,12 @@ mod tests {
         let none = FakeAvspec {
             results: "<html></html>".into(),
         };
-        let err = latest(&none, "del cep", 4).unwrap_err();
+        let err = latest(&none, "del cep", 0, 4).unwrap_err();
         assert!(err.to_string().contains("no spectra"));
         let some = FakeAvspec {
             results: result_row(5, "2460000.5", "2023-02-25"),
         };
-        let err = latest(&some, "del cep", 4).unwrap_err();
+        let err = latest(&some, "del cep", 0, 4).unwrap_err();
         assert!(err.to_string().contains("couldn't download"));
     }
 }

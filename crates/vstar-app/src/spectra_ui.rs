@@ -17,6 +17,10 @@ const COUNT: usize = 4;
 #[derive(Default)]
 pub struct SpectraState {
     task: Option<Task<Vec<Record>>>,
+    /// A "load more" request in progress, and whether the last one found
+    /// nothing new.
+    more_task: Option<Task<Vec<Record>>>,
+    no_more: bool,
     records: Vec<Record>,
     error: Option<String>,
     /// The star the spectra were asked for.
@@ -30,13 +34,30 @@ impl SpectraState {
         let name = star.to_string();
         self.star = name.clone();
         self.error = None;
+        self.no_more = false;
+        self.more_task = None;
         self.opened = true;
         self.task = Some(Task::spawn(
             ctx,
             format!("Loading spectra of {name} from AVSpec"),
             move |_| {
                 let http = ReqwestClient::new()?;
-                avspec::latest(&http, &name, COUNT)
+                avspec::latest(&http, &name, 0, COUNT)
+            },
+        ));
+    }
+
+    /// Fetch the next few spectra after those already shown.
+    fn request_more(&mut self, ctx: &egui::Context) {
+        let name = self.star.clone();
+        let skip = self.records.len();
+        self.error = None;
+        self.more_task = Some(Task::spawn(
+            ctx,
+            format!("Loading more spectra of {name} from AVSpec"),
+            move |_| {
+                let http = ReqwestClient::new()?;
+                avspec::latest(&http, &name, skip, COUNT)
             },
         ));
     }
@@ -60,6 +81,16 @@ fn describe(record: &Record) -> String {
 
 impl VStarApp {
     pub(crate) fn poll_spectra(&mut self) {
+        if let Some(result) = self.spectra.more_task.as_ref().and_then(Task::poll) {
+            self.spectra.more_task = None;
+            match result {
+                Ok(mut more) => {
+                    self.spectra.no_more = more.len() < COUNT;
+                    self.spectra.records.append(&mut more);
+                }
+                Err(e) => self.spectra.error = Some(e.to_string()),
+            }
+        }
         let Some(result) = self.spectra.task.as_ref().and_then(Task::poll) else {
             return;
         };
@@ -93,28 +124,46 @@ impl VStarApp {
         if let Some(error) = &self.spectra.error {
             ui.add_space(6.0);
             ui.colored_label(ui.visuals().error_fg_color, error);
-            return;
+            if self.spectra.records.is_empty() {
+                return;
+            }
         }
         if self.spectra.task.is_some() {
             ui.add_space(6.0);
             ui.label(RichText::new("Loading…").weak());
             return;
         }
-        let records = &self.spectra.records;
         let nm = self.settings.spectrum_nm;
         let line_color = ui.visuals().strong_text_color();
-        let height = ((ui.available_height() - 90.0) / 2.0).max(140.0);
+        let height = ((ui.available_height() - 130.0) / 2.0).max(140.0);
         ui.add_space(4.0);
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for pair in records.chunks(2) {
-                ui.columns(2, |cols| {
-                    for (col, record) in cols.iter_mut().zip(pair) {
-                        spectrum_plot(col, record, height, line_color, nm);
-                    }
-                });
-                ui.add_space(8.0);
+        let mut more = false;
+        egui::ScrollArea::vertical()
+            .max_height((ui.available_height() - 36.0).max(100.0))
+            .show(ui, |ui| {
+                for pair in self.spectra.records.chunks(2) {
+                    ui.columns(2, |cols| {
+                        for (col, record) in cols.iter_mut().zip(pair) {
+                            spectrum_plot(col, record, height, line_color, nm);
+                        }
+                    });
+                    ui.add_space(8.0);
+                }
+            });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if self.spectra.more_task.is_some() {
+                ui.spinner();
+                ui.label(RichText::new("Loading more…").weak());
+            } else if self.spectra.no_more {
+                ui.label(RichText::new("No more spectra of this star in AVSpec.").weak());
+            } else {
+                more = ui.button("Load more").clicked();
             }
         });
+        if more {
+            self.spectra.request_more(ui.ctx());
+        }
     }
 }
 
