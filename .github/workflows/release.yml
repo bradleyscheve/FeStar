@@ -1,0 +1,31 @@
+name: Release
+
+# Push a tag such as v0.1.0 to build the Windows app and attach festar.exe
+# to a GitHub Release. The link
+# https://github.com/bradleyscheve/FeStar/releases/latest/download/festar.exe
+# then always gives the newest version.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Build and publish festar.exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Release build
+        run: cargo build --release -p vstar-app
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/festar.exe
+          generate_release_notes: true
