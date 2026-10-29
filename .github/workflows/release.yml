@@ -7,6 +7,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Or run it by hand from the Actions tab, naming the version to publish.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version to publish, e.g. v0.1.0 (created if it doesn't exist)"
+        required: true
 
 permissions:
   contents: write
@@ -27,5 +33,6 @@ jobs:
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           files: target/release/festar.exe
           generate_release_notes: true
