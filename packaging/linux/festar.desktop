@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FeStar
+GenericName=Variable star light curves
+Comment=Light curves, period search and phase plots for variable stars
+Exec=festar %f
+Icon=festar
+Terminal=false
+Categories=Science;Astronomy;Education;
+StartupWMClass=festar
