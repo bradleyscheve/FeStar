@@ -393,7 +393,7 @@ fn external_contents(ui: &mut egui::Ui, apps: &mut ExternalApps) {
                 "Stellarium",
                 &mut apps.stellarium_path,
                 &mut apps.stellarium_port,
-                "C:\\Program Files\\Stellarium\\stellarium.exe",
+                crate::external::path_hint(crate::external::Program::Stellarium),
             );
             row(
                 ui,
@@ -401,7 +401,7 @@ fn external_contents(ui: &mut egui::Ui, apps: &mut ExternalApps) {
                 "N.I.N.A.",
                 &mut apps.nina_path,
                 &mut apps.nina_port,
-                "C:\\Program Files\\N.I.N.A. - Nighttime Imaging 'N' Astronomy\\NINA.exe",
+                crate::external::path_hint(crate::external::Program::Nina),
             );
         });
     ui.add_space(4.0);

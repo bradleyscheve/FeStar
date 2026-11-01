@@ -16,12 +16,21 @@ mod tools_ui;
 mod vsp_ui;
 
 fn main() -> eframe::Result {
+    let viewport = egui::ViewportBuilder::default()
+        .with_title("FeStar")
+        .with_icon(std::sync::Arc::new(app_icon::icon(256)))
+        .with_inner_size([1280.0, 800.0])
+        .with_min_inner_size([800.0, 500.0]);
+    // On Linux this names the window for the desktop's task bar so it matches
+    // festar.desktop, and keeps settings in ~/.local/share/festar. It isn't
+    // set elsewhere because it would move Windows users' saved settings.
+    let viewport = if cfg!(target_os = "linux") {
+        viewport.with_app_id("festar")
+    } else {
+        viewport
+    };
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("FeStar")
-            .with_icon(std::sync::Arc::new(app_icon::icon(256)))
-            .with_inner_size([1280.0, 800.0])
-            .with_min_inner_size([800.0, 500.0]),
+        viewport,
         // OpenGL is the fallback for machines whose graphics drivers don't
         // work with the default (DirectX 12 / Vulkan) renderer.
         renderer: if std::env::var_os("VSTAR_OPENGL").is_some() {

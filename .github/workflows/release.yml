@@ -1,9 +1,9 @@
 name: Release
 
-# Push a tag such as v0.1.0 to build the Windows app and attach festar.exe
-# to a GitHub Release. The link
+# Push a tag such as v0.1.0 to build the Windows and Linux apps and attach
+# them to a GitHub Release. These links then always give the newest version:
 # https://github.com/bradleyscheve/FeStar/releases/latest/download/festar.exe
-# then always gives the newest version.
+# https://github.com/bradleyscheve/FeStar/releases/latest/download/festar-linux-x86_64.tar.gz
 on:
   push:
     tags: ["v*"]
@@ -21,8 +21,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release:
-    name: Build and publish festar.exe
+  windows:
+    name: Build festar.exe
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,9 +30,47 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Release build
         run: cargo build --release -p vstar-app
-      - name: Publish the release
-        uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: festar-windows
+          path: target/release/festar.exe
+
+  linux:
+    name: Build the Linux app
+    # The oldest supported Ubuntu, so the program also runs on older distros.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build libraries
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Release build
+        run: cargo build --release -p vstar-app
+      - name: Package
+        run: |
+          dir=festar-linux-x86_64
+          mkdir "$dir"
+          cp target/release/festar packaging/linux/festar.desktop packaging/linux/install.sh "$dir/"
+          cargo run --release -p vstar-app --example write_icon -- "$dir/festar.png"
+          tar czf "$dir.tar.gz" "$dir"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: festar-linux
+          path: festar-linux-x86_64.tar.gz
+
+  publish:
+    name: Publish the release
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          files: target/release/festar.exe
+          files: |
+            festar.exe
+            festar-linux-x86_64.tar.gz
           generate_release_notes: true

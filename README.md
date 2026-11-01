@@ -19,8 +19,8 @@ Progress against the four-step plan:
 4. **AI and packaging:** optional AI help choosing period-search settings and
    explaining results, then a Windows installer. *Not started.*
 
-Windows is the first target. The code is portable, so macOS and Linux builds
-can follow.
+Windows is the first target, and Linux builds are available too. The code is
+portable, so a macOS build can follow.
 
 ## What works now
 
@@ -39,7 +39,7 @@ can follow.
 - **Star card:** variability type, spectral type and a star icon that reflects
   the type; buttons to open the star's VSP chart, VSX page, Stellarium and
   N.I.N.A. framing, and to view the latest AAVSO spectra.
-- Light, dark or follow-Windows theme. Recent stars and settings are
+- Light, dark or follow-system theme. Recent stars and settings are
   remembered between runs.
 
 ## Getting the Windows app
@@ -51,9 +51,29 @@ contains `festar.exe`, which runs without installing anything.
 If the window stays blank on an older PC, set the environment variable
 `VSTAR_OPENGL=1` to use the OpenGL renderer instead of DirectX 12.
 
+## Getting the Linux app
+
+Each release also has `festar-linux-x86_64.tar.gz` (built on Ubuntu 22.04, so
+it runs on that and newer distributions). Unpack it and run `./festar`, or run
+`./install.sh` to put FeStar in `~/.local/bin` and add it to your applications
+menu:
+
+```
+tar xzf festar-linux-x86_64.tar.gz
+cd festar-linux-x86_64
+./install.sh
+```
+
+It needs OpenSSL 3 (`libssl3`), which current distributions already have.
+Saving an AI key in the system keyring needs a Secret Service such as GNOME
+Keyring or KWallet; without one the key is kept for the session only. The
+N.I.N.A. button only works on Windows, as N.I.N.A. has no Linux version;
+the Stellarium button works on Linux.
+
 ## Building from source
 
-Install Rust from <https://rustup.rs>, then:
+Install Rust from <https://rustup.rs> (on Linux also `pkg-config` and the
+OpenSSL headers, e.g. `sudo apt install pkg-config libssl-dev`), then:
 
 ```
 cargo run --release -p vstar-app --bin festar

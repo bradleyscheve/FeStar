@@ -87,20 +87,67 @@ pub fn open(
     })
 }
 
-/// Where a program is usually installed on Windows, tried when no location
-/// has been set in Preferences.
+/// Where a program is usually installed on this kind of computer, tried in
+/// order when no location has been set in Preferences.
+fn install_candidates(program: Program) -> &'static [&'static str] {
+    if cfg!(target_os = "windows") {
+        match program {
+            Program::Stellarium => &["C:\\Program Files\\Stellarium\\stellarium.exe"],
+            Program::Nina => &[
+                "C:\\Program Files\\N.I.N.A. - Nighttime Imaging 'N' Astronomy\\NINA.exe",
+                "C:\\Program Files (x86)\\N.I.N.A. - Nighttime Imaging 'N' Astronomy\\NINA.exe",
+            ],
+        }
+    } else if cfg!(target_os = "macos") {
+        match program {
+            Program::Stellarium => &["/Applications/Stellarium.app/Contents/MacOS/stellarium"],
+            // N.I.N.A. only runs on Windows.
+            Program::Nina => &[],
+        }
+    } else {
+        match program {
+            Program::Stellarium => &[
+                "/usr/bin/stellarium",
+                "/usr/local/bin/stellarium",
+                "/snap/bin/stellarium",
+                "/var/lib/flatpak/exports/bin/org.stellarium.Stellarium",
+            ],
+            Program::Nina => &[],
+        }
+    }
+}
+
+/// The example location shown in the empty Preferences box.
+pub fn path_hint(program: Program) -> &'static str {
+    match (program, install_candidates(program).first()) {
+        (_, Some(path)) => path,
+        (Program::Nina, None) => "N.I.N.A. runs on Windows only",
+        (Program::Stellarium, None) => "",
+    }
+}
+
+/// The program's file name on the PATH, for systems where programs are
+/// usually started by name.
+fn command_name(program: Program) -> Option<&'static str> {
+    match program {
+        Program::Stellarium if !cfg!(target_os = "windows") => Some("stellarium"),
+        _ => None,
+    }
+}
+
 fn default_path(program: Program) -> Option<String> {
-    let candidates: &[&str] = match program {
-        Program::Stellarium => &["C:\\Program Files\\Stellarium\\stellarium.exe"],
-        Program::Nina => &[
-            "C:\\Program Files\\N.I.N.A. - Nighttime Imaging 'N' Astronomy\\NINA.exe",
-            "C:\\Program Files (x86)\\N.I.N.A. - Nighttime Imaging 'N' Astronomy\\NINA.exe",
-        ],
-    };
-    candidates
+    let on_path = command_name(program).and_then(|name| {
+        let dirs = std::env::var_os("PATH")?;
+        std::env::split_paths(&dirs)
+            .map(|dir| dir.join(name))
+            .find(|p| p.is_file())
+            .map(|p| p.display().to_string())
+    });
+    install_candidates(program)
         .iter()
         .find(|p| std::path::Path::new(p).exists())
         .map(|p| p.to_string())
+        .or(on_path)
 }
 
 /// How long to wait for a program we started to begin answering.
@@ -159,6 +206,13 @@ fn send(program: Program, apps: &ExternalApps, target: &Target) -> Result<String
         configured.trim().to_string()
     };
     if path.is_empty() {
+        if program == Program::Nina && !cfg!(target_os = "windows") {
+            return Err(Error::Analysis(format!(
+                "Couldn't reach N.I.N.A. on port {}. N.I.N.A. runs on Windows only, so this \
+                 button works when FeStar runs on the same Windows computer.",
+                apps.nina_port
+            )));
+        }
         return Err(Error::Analysis(format!(
             "Couldn't reach {name}, and I don't know where it is installed. Start it, or set its \
              location in File > Preferences. {}",

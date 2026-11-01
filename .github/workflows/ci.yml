@@ -32,3 +32,26 @@ jobs:
         with:
           name: festar-windows
           path: target/release/festar.exe
+
+  linux:
+    name: Linux build and tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build libraries
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --all
+      - name: Release build
+        run: cargo build --release -p vstar-app
+      - name: Upload the Linux app
+        uses: actions/upload-artifact@v4
+        with:
+          name: festar-linux
+          path: target/release/festar
