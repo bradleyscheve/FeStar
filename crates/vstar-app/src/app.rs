@@ -9,6 +9,7 @@ use vstar_core::{Dataset, Observation, StarQuery, Validation, bands, time};
 
 use crate::external::{self, ExternalApps, Program};
 use crate::loader::{Job, Request};
+use crate::observers_ui::ObserversState;
 use crate::phase_ui::PhaseState;
 use crate::prefs::{PrefsState, Secrets};
 use crate::search_ui::{SearchMode, SearchState};
@@ -175,6 +176,7 @@ pub struct VStarApp {
     pub(crate) search: SearchState,
     pub(crate) prefs: PrefsState,
     vsp: VspState,
+    observers: ObserversState,
     external_task: Option<Task<String>>,
     pub(crate) tools: ToolsState,
     pub(crate) spectra: SpectraState,
@@ -217,6 +219,7 @@ impl VStarApp {
             search: SearchState::default(),
             prefs: PrefsState::default(),
             vsp: VspState::default(),
+            observers: ObserversState::default(),
             external_task: None,
             tools: ToolsState::default(),
             spectra: SpectraState::default(),
@@ -945,6 +948,13 @@ impl VStarApp {
                 });
             }
             ui.separator();
+            if ui
+                .button("Observers")
+                .on_hover_text("List the observer codes in this star's observations")
+                .clicked()
+            {
+                self.observers.open = true;
+            }
             ui.checkbox(&mut self.settings.show_errors, "Error bars");
             ui.checkbox(
                 &mut self.settings.show_fainter_than,
@@ -1083,6 +1093,7 @@ impl eframe::App for VStarApp {
         let ctx = ui.ctx().clone();
         self.poll_tools(&ctx);
         self.vsp.show(&ctx);
+        self.observers.show(&ctx, self.dataset.as_ref());
         self.show_tool_dialog(&ctx);
         self.show_history_dialogs(&ctx);
         self.show_phase_dialog(&ctx);

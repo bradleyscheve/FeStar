@@ -6,6 +6,7 @@ mod app_icon;
 mod external;
 mod light_curve;
 mod loader;
+mod observers_ui;
 mod phase_ui;
 mod prefs;
 mod search_ui;
