@@ -9,7 +9,7 @@ use vstar_core::{Dataset, Observation, StarQuery, Validation, bands, time};
 
 use crate::external::{self, ExternalApps, Program};
 use crate::loader::{Job, Request};
-use crate::observers_ui::ObserversState;
+use crate::observers_ui::{self, ObserversState};
 use crate::phase_ui::PhaseState;
 use crate::prefs::{PrefsState, Secrets};
 use crate::search_ui::{SearchMode, SearchState};
@@ -152,6 +152,7 @@ const VIEW_TAB_FILL: egui::Color32 = egui::Color32::from_rgb(0x40, 0x8A, 0xF5);
 struct StarSlot {
     dataset: Option<Dataset>,
     hidden_bands: HashSet<String>,
+    hidden_observers: HashSet<String>,
     reset_view: bool,
     tab: Tab,
     phase: PhaseState,
@@ -168,6 +169,9 @@ pub struct VStarApp {
     active: usize,
     pub(crate) dataset: Option<Dataset>,
     pub(crate) hidden_bands: HashSet<String>,
+    /// Observer codes whose observations are left out of the chart and
+    /// the analysis.
+    pub(crate) hidden_observers: HashSet<String>,
     job: Option<Job>,
     status: Status,
     pub(crate) reset_view: bool,
@@ -211,6 +215,7 @@ impl VStarApp {
             active: 0,
             dataset: None,
             hidden_bands: HashSet::new(),
+            hidden_observers: HashSet::new(),
             job,
             status: Status::Ready,
             reset_view: false,
@@ -237,6 +242,11 @@ impl VStarApp {
         ds.observations
             .iter()
             .filter(|o| !self.hidden_bands.contains(&o.band))
+            .filter(|o| {
+                !self
+                    .hidden_observers
+                    .contains(observers_ui::observer_key(o))
+            })
             .filter(|o| !o.fainter_than)
             .filter(|o| match o.validation {
                 Validation::Good => true,
@@ -332,6 +342,7 @@ impl VStarApp {
             *slot = StarSlot {
                 dataset: Some(dataset),
                 hidden_bands: std::mem::take(&mut self.hidden_bands),
+                hidden_observers: std::mem::take(&mut self.hidden_observers),
                 reset_view: self.reset_view,
                 tab: self.tab,
                 phase: std::mem::take(&mut self.phase),
@@ -352,6 +363,7 @@ impl VStarApp {
             let slot = std::mem::take(&mut self.slots[i]);
             self.dataset = slot.dataset;
             self.hidden_bands = slot.hidden_bands;
+            self.hidden_observers = slot.hidden_observers;
             self.reset_view = slot.reset_view;
             self.tab = slot.tab;
             self.phase = slot.phase;
@@ -381,6 +393,7 @@ impl VStarApp {
         self.slots[i] = StarSlot::default();
         self.active = i;
         self.hidden_bands.clear();
+        self.hidden_observers.clear();
         self.phase.reset();
         self.search.reset();
         self.tools.reset();
@@ -394,6 +407,7 @@ impl VStarApp {
         if i == self.active {
             self.dataset = None;
             self.hidden_bands.clear();
+            self.hidden_observers.clear();
             self.phase.reset();
             self.search.reset();
             self.tools.reset();
@@ -1030,6 +1044,7 @@ impl VStarApp {
         let opts = light_curve::Options {
             mode,
             hidden_bands: &self.hidden_bands,
+            hidden_observers: &self.hidden_observers,
             show_discrepant: self.settings.show_discrepant,
             show_fainter_than: self.settings.show_fainter_than,
             show_errors: self.settings.show_errors,
@@ -1093,7 +1108,8 @@ impl eframe::App for VStarApp {
         let ctx = ui.ctx().clone();
         self.poll_tools(&ctx);
         self.vsp.show(&ctx);
-        self.observers.show(&ctx, self.dataset.as_ref());
+        self.observers
+            .show(&ctx, self.dataset.as_ref(), &mut self.hidden_observers);
         self.show_tool_dialog(&ctx);
         self.show_history_dialogs(&ctx);
         self.show_phase_dialog(&ctx);
