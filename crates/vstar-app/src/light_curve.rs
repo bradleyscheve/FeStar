@@ -28,6 +28,7 @@ pub enum Mode {
 pub struct Options<'a> {
     pub mode: Mode,
     pub hidden_bands: &'a HashSet<String>,
+    pub hidden_observers: &'a HashSet<String>,
     pub show_discrepant: bool,
     pub show_fainter_than: bool,
     pub show_errors: bool,
@@ -110,6 +111,9 @@ pub fn show(ui: &mut egui::Ui, ds: &Dataset, opts: &Options) {
                 .enumerate()
                 .filter(|(_, o)| {
                     o.band == band
+                        && !opts
+                            .hidden_observers
+                            .contains(crate::observers_ui::observer_key(o))
                         && o.validation == validation
                         && (validation == Validation::Discrepant || o.fainter_than == fainter)
                 })
