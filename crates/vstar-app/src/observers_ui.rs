@@ -50,7 +50,7 @@ impl ObserversState {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.search)
                             .hint_text("Search observer codes")
-                            .desired_width(ui.available_width() - 100.0),
+                            .desired_width(170.0),
                     );
                     if ui.small_button("All").clicked() {
                         hidden.clear();
