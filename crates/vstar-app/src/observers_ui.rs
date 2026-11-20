@@ -1,9 +1,9 @@
-//! The "Observers" popup: a searchable list of the observer codes in the
+//! The "Observers" sidebar: a searchable list of the observer codes in the
 //! observations loaded for the active star.
 
 use std::collections::BTreeMap;
 
-use egui::{Context, RichText};
+use egui::RichText;
 use vstar_core::Dataset;
 
 #[derive(Default)]
@@ -13,15 +13,26 @@ pub struct ObserversState {
 }
 
 impl ObserversState {
-    pub fn show(&mut self, ctx: &Context, dataset: Option<&Dataset>) {
+    /// The sidebar on the right of the window; nothing when closed. Must be
+    /// called before the central panel is laid out.
+    pub fn show(&mut self, ui: &mut egui::Ui, dataset: Option<&Dataset>) {
         if !self.open {
             return;
         }
-        let mut open = true;
-        egui::Window::new("Observers")
-            .open(&mut open)
-            .default_size([300.0, 420.0])
-            .show(ctx, |ui| {
+        egui::Panel::right("observers")
+            .resizable(true)
+            .default_size(220.0)
+            .min_size(160.0)
+            .show(ui, |ui| {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Observers").strong().size(16.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("✕").on_hover_text("Close").clicked() {
+                            self.open = false;
+                        }
+                    });
+                });
                 let Some(ds) = dataset else {
                     ui.label("No star is loaded.");
                     return;
@@ -68,6 +79,5 @@ impl ObserversState {
                         });
                 });
             });
-        self.open = open;
     }
 }

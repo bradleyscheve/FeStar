@@ -950,10 +950,12 @@ impl VStarApp {
             ui.separator();
             if ui
                 .button("Observers")
-                .on_hover_text("List the observer codes in this star's observations")
+                .on_hover_text(
+                    "Show or hide the list of observer codes in this star's observations",
+                )
                 .clicked()
             {
-                self.observers.open = true;
+                self.observers.open = !self.observers.open;
             }
             ui.checkbox(&mut self.settings.show_errors, "Error bars");
             ui.checkbox(
@@ -1093,7 +1095,6 @@ impl eframe::App for VStarApp {
         let ctx = ui.ctx().clone();
         self.poll_tools(&ctx);
         self.vsp.show(&ctx);
-        self.observers.show(&ctx, self.dataset.as_ref());
         self.show_tool_dialog(&ctx);
         self.show_history_dialogs(&ctx);
         self.show_phase_dialog(&ctx);
@@ -1114,6 +1115,7 @@ impl eframe::App for VStarApp {
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| self.side_panel(ui));
             });
+        self.observers.show(ui, self.dataset.as_ref());
         egui::CentralPanel::default().show(ui, |ui| {
             if self.dataset.is_none() {
                 ui.centered_and_justified(|ui| {
